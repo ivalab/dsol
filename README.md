@@ -1,3 +1,60 @@
+## Ubuntu 20.04 & ROS Noetic
+
+### Build
+
+```bash
+mkdir -p ~/closedloop_ws/src
+
+# Configure ros workspace.
+cd ~/closedloop_ws
+catkin build -j2 --no-status -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17
+
+# Clone dsol.
+cd src
+git clone https://github.gatech.edu/RoboSLAM/dsol.git
+
+# Build 3rdparty.
+# Assuming $SLAM_OPENSOURCE_ROOT variable is defined, the 3rdparty library
+# will be installed under "$SLAM_OPENSOURCE_ROOT/dsol/".
+
+sudo apt install libgflags-dev libgmock-dev libgtest-dev
+
+cd dsol
+./build_deps.sh
+
+# Build dsol.
+
+cd ~/catkin_ws/src/dsol
+catkin build -j2 --no-status -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 --this
+```
+
+### Run
+
+```bash
+
+# Please make sure roscore is running !!!
+
+cd scripts
+
+source ~/catkin_ws/devel/setup.bash
+
+# Remember to configure the variables in the script.
+python Run_EuRoC_Stereo_ROS.py
+
+# Evaluation.
+python Evaluate_EuRoC_Stereo.py
+
+```
+
+### Debug
+If the error of any library missing is reported, just export the library path:
+```bash
+export LD_LIBRARY_PATH=${SLAM_OPENSOURCE_ROOT}/dsol/lib/:$LD_LIBRARY_PATH
+```
+
+---
+---
+
 # 🛢️ DSOL: Direct Sparse Odometry Lite
 
 ## Reference
@@ -59,11 +116,3 @@ file](https://github.com/versatran01/dsol/blob/main/.github/workflows/build.yaml
 For reproducing the results in the paper, place use the `iros22` branch.
 
 This is the open-source version, advanced features are not included.
-
-## Related
-
-See here for a fast lidar odometry
-
-https://github.com/versatran01/rofl-beta
-
-https://github.com/versatran01/llol
