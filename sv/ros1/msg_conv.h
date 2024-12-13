@@ -38,6 +38,7 @@ void Sophus2Ros(const Sophus::SE3d& se3, geometry_msgs::Transform& tf);
 void Sophus2Ros(const Sophus::SO3d& so3, geometry_msgs::Quaternion& quat);
 void Ros2Sophus(const geometry_msgs::Quaternion& quat, Sophus::SO3d& so3);
 void Ros2Sophus(const geometry_msgs::Pose& pose, Sophus::SE3d& se3);
+Sophus::SE3d Ros2Sophus(const geometry_msgs::Transform& tf);
 
 void Ros2Ros(const geometry_msgs::Pose& pose, geometry_msgs::Transform& tf);
 

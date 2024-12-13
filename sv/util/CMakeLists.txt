@@ -2,7 +2,6 @@ cc_library(
   NAME util_log
   HDRS "logging.h"
   DEPS sv_base fmt::fmt glog::glog
-  DEFINES FMT_DEPRECATED_OSTREAM
   INTERFACE)
 
 cc_library(
@@ -87,9 +86,9 @@ cc_test(
 cc_library(
   NAME util_dataset
   SRCS "dataset.cpp"
-  DEPS sv_util_ocv Eigen3::Eigen Sophus::Sophus absl::flat_hash_map
+  DEPS sv_util_ocv Eigen3::Eigen Sophus::Sophus absl::flat_hash_map opencv_calib3d
   DEFINES XTENSOR_FOUND=${xtensor_FOUND})
-if(xtensor_FOUND)
+if(XTENSOR_FOUND)
   target_link_libraries(sv_util_dataset PUBLIC xtensor)
 endif()
 cc_binary(
@@ -105,3 +104,8 @@ cc_test(
   NAME util_metric_test
   SRCS "metric_test.cpp"
   DEPS sv_util_metric)
+
+cc_library(
+  NAME util_undistorter
+  SRCS "undistorter.cpp"
+  DEPS sv_util_log opencv_calib3d)

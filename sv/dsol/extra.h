@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <map>
 
 #include "sv/dsol/frame.h"
 #include "sv/dsol/select.h"
@@ -49,18 +50,50 @@ struct MotionModel {
 /// https://vision.in.tum.de/data/datasets/rgbd-dataset/file_formats
 /// timestamp tx ty tz qx qy qz qw
 class TumFormatWriter {
-  std::string filename_{};
-  std::ofstream ofs_{};
-
  public:
   /// @brief If filename is empty, it will not write to anything
-  explicit TumFormatWriter(const std::string& filename = "");
+  explicit TumFormatWriter(const std::string& prefix = "");
 
-  const std::string& filename() const noexcept { return filename_; }
-  bool IsDummy() const noexcept { return filename_.empty(); }
+  const std::string& prefix() const noexcept { return prefix_; }
+  bool IsDummy() const noexcept { return prefix_.empty(); }
 
   /// @brief Write to kitti
-  void Write(int64_t i, const Sophus::SE3d& pose);
+  // void Write(int64_t i, const Sophus::SE3d& pose);
+  /// @brief Write to euroc
+  void Write(double timestamp,
+             const Sophus::SE3d& Twc_est,
+             const Sophus::SE3d& Twc_prior);
+  void Write(const std::string& filename, const Sophus::SE3d& base_to_cam);
+
+ private:
+  std::string prefix_{};
+  std::map<std::string, std::ofstream> named_ofs_{};
+};
+
+class StatsWriter {
+ public:
+  using Ptr = std::shared_ptr<StatsWriter>;
+
+  StatsWriter(const std::string& prefix = "");
+
+  bool IsDummy() const noexcept { return prefix_.empty(); }
+  void WriteConfigs(const std::string& config_str);
+  void WriteTimings(double timestamp,
+                    double tracking_time,
+                    double mapping_time);
+  // void WriteTotalImages(int total_images);
+  void WriteTrackingStatsHeader(const std::string& header);
+  void WriteTrackingStats(double timestamp, const std::string& stats);
+  void WriteMappingStatsHeader(const std::string& header);
+  void WriteMappingStats(double timestamp, const std::string& stats);
+
+  static Ptr Create(const std::string& prefix = "") {
+    return prefix.empty() ? nullptr : std::make_shared<StatsWriter>(prefix);
+  }
+
+ private:
+  std::string prefix_{""};
+  std::map<std::string, std::ofstream> named_ofs_;
 };
 
 struct PlayCfg {

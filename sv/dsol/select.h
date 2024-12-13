@@ -68,6 +68,10 @@ class PixelSelector {
     return os << rhs.Repr();
   }
 
+  void Init(const SelectCfg& cfg) noexcept {
+    cfg_ = cfg;
+    cfg_.Check();
+  }
   const SelectCfg& cfg() const noexcept { return cfg_; }
   const cv::Mat& mask() const noexcept { return occ_mask_; }
   const PixelGrid& pixels() const noexcept { return pixels_; }

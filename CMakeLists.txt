@@ -10,6 +10,12 @@ option(BUILD_TESTING "Build tests" OFF)
 option(BUILD_BENCHMARK "Build benchmarks" OFF)
 option(BUILD_VECTORIZE "Build with -march=native" ON)
 
+IF(NOT CMAKE_BUILD_TYPE)
+  SET(CMAKE_BUILD_TYPE Release)
+ENDIF()
+
+MESSAGE("Build type: " ${CMAKE_BUILD_TYPE})
+
 set(CC_TARGET_PREFIX sv)
 include(CMakeHelpers)
 
@@ -29,6 +35,9 @@ find_package(
              nav_msgs
              sensor_msgs
              visualization_msgs)
+
+# this line must be put after catkin find_package
+list(PREPEND CMAKE_PREFIX_PATH "$ENV{SLAM_OPENSOURCE_ROOT}/dsol")
 
 find_package(TBB REQUIRED)
 find_package(fmt REQUIRED)

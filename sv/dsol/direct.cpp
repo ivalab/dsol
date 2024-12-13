@@ -67,6 +67,13 @@ std::string DirectStatus::Repr() const {
       converged);
 }
 
+std::string DirectStatus::String() const {
+  std::stringstream ss;
+  ss << num_kfs << " " << num_points << " " << num_levels << " " << num_iters
+     << " " << num_costs << " " << cost << " " << converged;
+  return ss.str();
+}
+
 /// ============================================================================
 DirectCost::DirectCost(int level,
                        const Camera& camera_scaled,

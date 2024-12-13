@@ -28,28 +28,108 @@ void MotionModel::Correct(const Sophus::SE3d& T_w_c, double dt) {
 }
 
 /// ============================================================================
-TumFormatWriter::TumFormatWriter(const std::string& filename)
-    : filename_{filename} {
-  if (!filename_.empty()) {
-    ofs_ = std::ofstream{filename_};
+TumFormatWriter::TumFormatWriter(const std::string& prefix) : prefix_{prefix} {
+  if (!prefix_.empty()) {
+    named_ofs_["est"] = std::ofstream{prefix_ + "_AllFrameTrajectory.txt"};
+    named_ofs_["est"] << "# timestamp tx ty tz qx qy qz qw\n";
+    // named_ofs_["prior"] =
+    //     std::ofstream{prefix_ + "_AllFrameTrajectoryPrior.txt"};
+    // named_ofs_["prior"] << "# timestamp tx ty tz qx qy qz qw\n";
   }
 }
 
-void TumFormatWriter::Write(int64_t i, const Sophus::SE3d& pose) {
-  if (!ofs_.good()) return;
+void TumFormatWriter::Write(double timestamp,
+                            const Sophus::SE3d& Twc_est,
+                            const Sophus::SE3d& Twc_prior) {
+  if (named_ofs_.count("est") && named_ofs_["est"].good()) {
+    const auto& t = Twc_est.translation();
+    const auto& q = Twc_est.unit_quaternion();
+    const auto line =
+        fmt::format("{:.4f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f}",
+                    timestamp,
+                    t.x(),
+                    t.y(),
+                    t.z(),
+                    q.x(),
+                    q.y(),
+                    q.z(),
+                    q.w());
+    named_ofs_["est"] << line << std::endl;
+  }
 
-  const auto& t = pose.translation();
-  const auto& q = pose.unit_quaternion();
-  const auto line = fmt::format("{} {} {} {} {} {} {} {}",
-                                i,
-                                t.x(),
-                                t.y(),
-                                t.z(),
-                                q.x(),
-                                q.y(),
-                                q.z(),
-                                q.w());
-  ofs_ << line << std::endl;
+  if (named_ofs_.count("prior") && named_ofs_["prior"].good()) {
+    const auto& t = Twc_prior.translation();
+    const auto& q = Twc_prior.unit_quaternion();
+    const auto line =
+        fmt::format("{:.4f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f} {:.6f}",
+                    timestamp,
+                    t.x(),
+                    t.y(),
+                    t.z(),
+                    q.x(),
+                    q.y(),
+                    q.z(),
+                    q.w());
+    named_ofs_["prior"] << line << std::endl;
+  }
+}
+
+void TumFormatWriter::Write(const std::string& filename,
+                            const Sophus::SE3d& base_to_cam) {
+  std::ofstream ofs{prefix_ + "_" + filename + ".txt"};
+  ofs << "# base_to_cam: [R, t; 0 0 0 1]\n";
+  ofs << base_to_cam.matrix();
+  ofs.close();
+}
+
+StatsWriter::StatsWriter(const std::string& prefix) : prefix_(prefix) {
+  if (!prefix_.empty()) {
+    named_ofs_["configs"] = std::ofstream(prefix_ + "_configs.txt");
+    named_ofs_["timings"] = std::ofstream(prefix_ + "_timings.txt");
+    named_ofs_["timings"]
+        << "# timestamp tracking_time mapping_time (seconds)\n";
+    named_ofs_["tracking_stats"] =
+        std::ofstream(prefix_ + "_tracking_stats.txt");
+    named_ofs_["mapping_stats"] = std::ofstream(prefix_ + "_mapping_stats.txt");
+  }
+}
+
+void StatsWriter::WriteConfigs(const std::string& config_str) {
+  if (!named_ofs_.count("configs") || !named_ofs_["configs"].good()) {
+    return;
+  }
+  named_ofs_["configs"] << config_str;
+}
+
+void StatsWriter::WriteTimings(double timestamp,
+                               double tracking_time,
+                               double mapping_time) {
+  if (!named_ofs_.count("timings") || !named_ofs_["timings"].good()) {
+    return;
+  }
+  named_ofs_["timings"] << fmt::format("{:.4f} {:.6f} {:.6f}",
+                                       timestamp,
+                                       tracking_time,
+                                       mapping_time)
+                        << std::endl;
+}
+
+void StatsWriter::WriteTrackingStatsHeader(const std::string& header) {
+  named_ofs_["tracking_stats"] << "# timestamp " << header << "\n";
+}
+
+void StatsWriter::WriteTrackingStats(double timestamp,
+                                     const std::string& stats) {
+  named_ofs_["tracking_stats"] << timestamp << " " << stats << "\n";
+}
+
+void StatsWriter::WriteMappingStatsHeader(const std::string& header) {
+  named_ofs_["mapping_stats"] << "# timestamp " << header << "\n";
+}
+
+void StatsWriter::WriteMappingStats(double timestamp,
+                                    const std::string& stats) {
+  named_ofs_["mapping_stats"] << timestamp << " " << stats << "\n";
 }
 
 /// ============================================================================

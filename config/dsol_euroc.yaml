@@ -1,0 +1,22 @@
+odom:
+  marg: false
+  num_kfs: 5
+  num_levels: 4
+  min_track_ratio: 0.4
+  min_track_per_kf: 10
+  vis_min_depth: 0.1
+  reinit: true
+  init_depth: false
+  init_stereo: true
+  init_align: true
+stereo:
+  min_depth: 0.1
+align:
+  affine: false
+  stereo: true
+adjust:
+  affine: false
+  stereo: true
+select:
+  sel_level: 1
+  cell_size: 13

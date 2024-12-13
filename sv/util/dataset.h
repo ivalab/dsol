@@ -3,6 +3,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <array>
+#include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
 #include <sophus/se3.hpp>
 
@@ -41,6 +42,7 @@ struct DataType {
   inline static const std::string kDepth = "depth";
   inline static const std::string kIntrin = "intrin";
   inline static const std::string kPose = "pose";
+  inline static const std::string kTimestamp = "timestamp";
 };
 
 // Data retrieving function, takes index and returns cv::Mat
@@ -199,6 +201,77 @@ class KittiOdom final : public DatasetBase {
   cv::Mat ReadPoses(const std::string& file) const;
   cv::Mat ConvertPoses(const cv::Mat& poses) const;
 
+  double baseline_{};
+};
+
+class EuRoC final : public DatasetBase {
+ public:
+  // Number of cameras
+  static constexpr int kNumCams = 2;
+  // Default data types for this dataset
+  inline static const std::vector<std::string> kDtypes = {
+      DataType::kImage, DataType::kIntrin, DataType::kPose};
+  struct Parameters {
+    cv::Mat bTc;  ///< extrinsic of the left camera(0) w.r.t body
+    cv::Mat D;    ///< distortion
+    cv::Mat K;    ///< intrinsic
+    std::string camera_model = "UNKNOWN";      ///< "pinhole", e.t.c
+    std::string distortion_model = "UNKNOWN";  ///< "radial-tangential", e.t.c
+    cv::Size2i resolution = {0, 0};            ///< image size
+    float rate = 0;                            ///< hz
+
+    /**
+     * @brief
+     *
+     * @param os
+     * @param parameters
+     * @return sdt::ostream&
+     */
+    friend std::ostream& operator<<(std::ostream& os, const Parameters& p) {
+      os << "Parameters \n"
+         << "bTc: \n"
+         << p.bTc << "\n"
+         << "D: " << p.D << "\n"
+         << "K: \n"
+         << p.K << "\n"
+         << "camera_model: " << p.camera_model << "\n"
+         << "distortion_model: " << p.distortion_model << "\n"
+         << "resolution: " << p.resolution << "\n"
+         << "rate: " << p.rate << std::endl;
+      return os;
+    }
+
+    /**
+     * @brief
+     *
+     * @param file
+     * @return Parameters
+     */
+    static Parameters loadFromYaml(const std::string& file);
+  };
+
+  explicit EuRoC(const std::string& data_dir);
+  static EuRoC Create(const std::string& base_dir, int seq);
+
+ private:
+  int ToInd(int i, int cam = 0) const { return i + cam * size_; }
+  cv::Mat GetImpl(std::string_view dtype, int i, int cam) const override;
+
+  // Get data of dtype at index i, camera cam
+  void ReadTimestamps(const std::string& name,
+                      std::vector<std::string>& files) const;
+  cv::Mat ReadIntrinsics(const std::string& calib_file0,
+                         const std::string& calib_file1);
+  cv::Mat ReadPoses(const std::string& file,
+                    const std::vector<std::string>& timestamps) const;
+  cv::Mat ConvertPoses(const cv::Mat& poses) const;
+  cv::Mat ReadAlignedTimestampsAndPoses(const std::string& timestamp_file_name,
+                                        const std::string& pose_file_name,
+                                        std::vector<std::string>& files);
+
+  std::string prefix_[2];
+  cv::Mat calib0_M1_, calib0_M2_;
+  cv::Mat calib1_M1_, calib1_M2_;
   double baseline_{};
 };
 

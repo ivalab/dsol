@@ -144,25 +144,38 @@ std::string DirectOdometry::Repr() const {
       window.Repr());
 }
 
-OdomStatus DirectOdometry::Estimate(const cv::Mat& image_l,
+OdomStatus DirectOdometry::Estimate(double timestamp,
+                                    const cv::Mat& image_l,
                                     const cv::Mat& image_r,
                                     const Sophus::SE3d& dT,
                                     const cv::Mat& depth) {
   OdomStatus status;
 
-  status.track = Track(image_l, image_r, dT);
+  Timer tracking_timer;
+  status.track = Track(timestamp, image_l, image_r, dT);
+  status.tracking_time = (double)tracking_timer.Elapsed() / 1e9;
+  status.disp_frame = CreateFrameForVisualization();
   if (cfg_.vis > 0) DrawFrame(depth);
 
   if (!status.track.ok) Reinitialize();
 
+  Timer mapping_timer;
   status.map = Map(status.track.add_kf, depth);
+  status.mapping_time = (double)mapping_timer.Elapsed() / 1e9;
   if (cfg_.vis > 1 && status.track.add_kf) DrawKeyframe();
 
   if (cfg_.log > 0) Summarize(status.track.add_kf);
+
+  if (stats_writer_ptr) {
+    stats_writer_ptr->WriteTimings(
+        timestamp, status.tracking_time, status.mapping_time);
+  }
+
   return status;
 }
 
-TrackStatus DirectOdometry::Track(const cv::Mat& image_l,
+TrackStatus DirectOdometry::Track(double timestamp,
+                                  const cv::Mat& image_l,
                                   const cv::Mat& image_r,
                                   const Sophus::SE3d& dT) {
   TrackStatus status;
@@ -187,6 +200,8 @@ TrackStatus DirectOdometry::Track(const cv::Mat& image_l,
   // Note that this uses the same storage as grays_l and grays_r
   frame.SetGrays(grays_l, grays_r);
   frame.SetTwc(frame.Twc() * dT);
+  frame.SetTimestamp(timestamp);
+  status.Twc_prior = frame.Twc();
 
   // Get a copy of the current (predicted) state if alignment failed
   const FrameState init_state = frame.state();
@@ -286,6 +301,11 @@ bool DirectOdometry::TrackFrame() {
   {
     auto t = ts.Scoped("T1_TrackFrame");
     status = aligner.Align(window.keyframes(), camera, frame, cfg_.tbb);
+
+    // if (stats_writer_ptr) {
+    //   stats_writer_ptr->WriteTrackingStats(frame.Timestamp(),
+    //   status.String());
+    // }
   }
 
   LOG(INFO) << fmt::format(log_color, "{}", status.Repr());
@@ -547,6 +567,18 @@ void DirectOdometry::Summarize(bool new_kf) const {
   }
 
   LOG_EVERY_N(INFO, cfg_.log) << ts.ReportAll(true);
+}
+
+cv::Mat DirectOdometry::CreateFrameForVisualization() const {
+  cv::Mat disp_frame;
+  cv::cvtColor(frame.grays_l().front(), disp_frame, cv::COLOR_GRAY2BGR);
+  const IntervalD range(0.0, 1.0 / cfg_.vis_min_depth);
+
+  // Draw warped points on this frame, solid means successfully tracked
+  for (const auto& warped : aligner.points1_vec()) {
+    DrawDepthPoints(disp_frame, warped, cmap, range, 2);
+  }
+  return disp_frame;
 }
 
 void DirectOdometry::DrawFrame(const cv::Mat& depth) const {

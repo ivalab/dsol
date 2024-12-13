@@ -1,8 +1,14 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wconversion"
+// Code that causes warning goes here
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <ros/ros.h>
 #include <rosgraph_msgs/Clock.h>
 #include <tf2_ros/transform_broadcaster.h>
+#pragma GCC diagnostic pop
 
 #include "sv/dsol/extra.h"
 #include "sv/dsol/node_util.h"
@@ -69,7 +75,7 @@ NodeData::NodeData(const ros::NodeHandle& pnh) : pnh_{pnh} {
   const auto save = pnh_.param<std::string>("save", "");
   writer_ = TumFormatWriter(save);
   if (!writer_.IsDummy()) {
-    ROS_WARN_STREAM("Writing results to: " << writer_.filename());
+    ROS_WARN_STREAM("Writing results to: " << writer_.prefix());
   }
 
   const auto alpha = pnh_.param<double>("motion_alpha", 0.5);
@@ -130,7 +136,14 @@ void NodeData::InitOdom() {
     pnh_.getParam("vis", cfg.vis);
     odom_.Init(cfg);
   }
-  odom_.selector = PixelSelector(ReadSelectCfg({pnh_, "select"}));
+  if (pnh_.hasParam("cell_size")) {
+    auto cfg = ReadSelectCfg({pnh_, "select"});
+    pnh_.getParam("cell_size", cfg.cell_size);
+    odom_.selector.Init(cfg);
+    LOG(INFO) << "selector cell_size = " << cfg.cell_size;
+  } else {
+    odom_.selector = PixelSelector(ReadSelectCfg({pnh_, "select"}));
+  }
   odom_.matcher = StereoMatcher(ReadStereoCfg({pnh_, "stereo"}));
   odom_.aligner = FrameAligner(ReadDirectCfg({pnh_, "align"}));
   odom_.adjuster = BundleAdjuster(ReadDirectCfg({pnh_, "adjust"}));
@@ -174,6 +187,9 @@ void NodeData::Run() {
   int end_ind = reverse_ ? data_range_.start - 1 : data_range_.end;
   const int delta = reverse_ ? -1 : 1;
 
+  // record total images
+  // writer_.Write((end_ind - start_ind) * delta);
+
   // Marker
   vm::Marker align_marker;
 
@@ -188,6 +204,13 @@ void NodeData::Run() {
     // Image
     auto image_l = dataset_.Get(DataType::kImage, ind, 0);
     auto image_r = dataset_.Get(DataType::kImage, ind, 1);
+    double image_l_timestamp = cnt;
+    {
+      const cv::Mat timestamp_mat = dataset_.Get(DataType::kTimestamp, ind, 0);
+      if (!timestamp_mat.empty()) {
+        image_l_timestamp = timestamp_mat.at<double>(0);
+      }
+    }
 
     // Intrin
     if (!odom_.camera.Ok()) {
@@ -218,18 +241,25 @@ void NodeData::Run() {
 
     // Then we transform everything into c0 frame
     const auto T_c0_c_gt = T_c0_w_gt * SE3dFromMat(pose_gt);
-
+    Timer process_timer;
     // Motion model predict
     if (!motion_.Ok()) {
       motion_.Init(T_c0_c_gt);
     } else {
       dT_pred = motion_.PredictDelta(dt);
     }
+    // if (false && ind != start_ind)  // use gt as prior
+    // {
+    //   dT_pred =
+    //       SE3dFromMat(dataset_.Get(DataType::kPose, ind - delta, 0)).inverse() *
+    //       SE3dFromMat(pose_gt);
+    // }
 
     const auto T_pred = odom_.frame.Twc() * dT_pred;
 
     // Odom
-    const auto status = odom_.Estimate(image_l, image_r, dT_pred, depth);
+    const auto status =
+        odom_.Estimate(image_l_timestamp, image_l, image_r, dT_pred, depth);
     ROS_INFO_STREAM(status.Repr());
 
     // Motion model correct if tracking is ok and not first frame
@@ -240,8 +270,10 @@ void NodeData::Run() {
       motion_.Scale(0.5);
     }
 
+    const double process_time = (double)process_timer.Elapsed() / 1e9;
+
     // Write to output
-    writer_.Write(cnt, status.Twc());
+    writer_.Write(image_l_timestamp, status.Twc(), status.track.Twc_prior);
 
     ROS_DEBUG_STREAM("trans gt:   " << T_c0_c_gt.translation().transpose());
     ROS_DEBUG_STREAM("trans pred: " << T_pred.translation().transpose());
@@ -251,7 +283,6 @@ void NodeData::Run() {
     ROS_DEBUG_STREAM("aff_l: " << odom_.frame.state().affine_l.ab.transpose());
     ROS_DEBUG_STREAM("aff_r: " << odom_.frame.state().affine_r.ab.transpose());
 
-    // publish stuff
     std_msgs::Header header;
     header.frame_id = frame_;
     header.stamp = time;
@@ -296,6 +327,42 @@ void NodeData::PublishOdom(const std_msgs::Header& header,
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "dsol_data");
+  // glog settings
+  {
+    // Init google logging.
+    google::InitGoogleLogging(argv[0]);
+
+    // Init ros.
+    ros::NodeHandle nh("~");
+
+    // Loading paramters.
+    nh.param<int>("min_log_level", FLAGS_minloglevel, 0);
+    // int also_log_to_console = 1;
+    // nh.param<int>("also_log_to_console", also_log_to_console, 1);
+    nh.param<bool>("also_log_to_console", FLAGS_alsologtostderr, true);
+    // FLAGS_alsologtostderr = also_log_to_console;
+    nh.param<int>("verbose_logging", FLAGS_v, 1);
+
+    // Set log directory.
+    std::string log_dir = "/tmp/dsol_logging";
+    nh.getParam("save", log_dir);
+    FLAGS_log_dir = log_dir;
+    google::SetLogDestination(google::FATAL, (log_dir + ".FATAL.").c_str());
+    google::SetLogDestination(google::ERROR, (log_dir + ".ERROR.").c_str());
+    google::SetLogDestination(google::WARNING, (log_dir + ".WARNING.").c_str());
+    google::SetLogDestination(google::INFO, (log_dir + ".INFO.").c_str());
+
+    // Output stream.
+    ROS_INFO(
+        "glog-logging: (\n min_log_level = %d, \n also_log_to_console = "
+        "%d, \n verbose_logging = %d, \n log_dir_prefix = %s).",
+        FLAGS_minloglevel,
+        FLAGS_alsologtostderr,
+        FLAGS_v,
+        log_dir.c_str());
+  }
+
+  // Init dsol.
   sv::dsol::NodeData node{ros::NodeHandle{"~"}};
   node.Run();
 }

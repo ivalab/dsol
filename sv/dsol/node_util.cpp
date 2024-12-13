@@ -63,6 +63,7 @@ OdomCfg ReadOdomCfg(const ros::NodeHandle& pnh) {
   pnh.getParam("init_depth", cfg.init_depth);
   pnh.getParam("init_stereo", cfg.init_stereo);
   pnh.getParam("init_align", cfg.init_align);
+  pnh.getParam("depth_factor", cfg.depth_factor);
   return cfg;
 }
 

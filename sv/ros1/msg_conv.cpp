@@ -108,6 +108,13 @@ void Ros2Sophus(const gm::Pose& pose, Sophus::SE3d& se3) {
   Ros2Eigen(pose.position, se3.translation());
 }
 
+Sophus::SE3d Ros2Sophus(const geometry_msgs::Transform& tf) {
+  Sophus::SE3d se3;
+  Ros2Sophus(tf.rotation, se3.so3());
+  Ros2Eigen(tf.translation, se3.translation());
+  return se3;
+}
+
 /// @brief Get size of datatype from PointFiled
 int GetPointFieldDataTypeBytes(uint8_t dtype) noexcept {
   // INT8 = 1u,

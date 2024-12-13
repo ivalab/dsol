@@ -45,6 +45,7 @@ struct DirectCostCfg {
 struct DirectCfg {
   DirectOptmCfg optm;
   DirectCostCfg cost;
+  std::string save_prefix;
 
   void Check() const;
   std::string Repr() const;
@@ -55,15 +56,21 @@ struct DirectCfg {
 
 /// @brief Direct method status
 struct DirectStatus {
-  int num_kfs{};          // num kfs used
-  int num_points{};       // num points used
-  int num_levels{};       // num levels used
-  int num_iters{};        // num iters run
-  int num_costs{};        // num costs
-  double cost{};          // total cost
+  int num_kfs{0};         // num kfs used
+  int num_points{0};      // num points used
+  int num_levels{0};      // num levels used
+  int num_iters{0};       // num iters run
+  int num_costs{0};       // num costs
+  double cost{0.0};       // total cost
   bool converged{false};  // whether convergence reached
 
   std::string Repr() const;
+  static std::string Header() {
+    return std::string(
+        "# num_kfs, num_points, num_levels, num_iters, "
+        "num_costs, cost, converged");
+  }
+  std::string String() const;
   friend std::ostream& operator<<(std::ostream& os, const DirectStatus& rhs) {
     return os << rhs.Repr();
   }

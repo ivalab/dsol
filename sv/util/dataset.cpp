@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <istream>
+#include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>  // imread
 #include <opencv2/imgproc.hpp>    // threashold
 
@@ -707,6 +708,346 @@ cv::Mat KittiOdom::ConvertPoses(const cv::Mat& poses) const {
   return transforms;
 }
 
+/// ============================================================================
+EuRoC::EuRoC(const std::string& data_dir)
+    : DatasetBase{"euroc", data_dir, kDtypes},
+      prefix_{data_dir + "/mav0/cam0/data", data_dir + "/mav0/cam1/data"} {
+  const fs::path data_path{data_dir_};
+  // ReadTimestamps(data_path / "times.txt", files_[DataType::kImage]);
+  const cv::Mat raw_poses = ReadAlignedTimestampsAndPoses(
+      data_path / "times.txt",
+      data_path / "../gt_pose_aligned/" /
+          (data_path.stem().string() + "_cam0_aligned.txt"),
+      files_[DataType::kImage]);
+  size_ = static_cast<int>(files_.at(DataType::kImage).size()) / 2;
+
+  // Intrinsics
+  data_[DataType::kIntrin] = ReadIntrinsics(data_path / "../calib0.yaml",
+                                            data_path / "../calib1.yaml");
+
+  // Extrinsics (GT poses)
+  // const cv::Mat raw_poses =
+  // ReadPoses(data_path / "../gt_pose_aligned/" /
+  // (data_path.stem().string() + "_cam0_aligned.txt"),
+  // files_[DataType::kImage]);
+
+  CHECK_EQ(size_, raw_poses.rows);
+  data_[DataType::kPose] = ConvertPoses(raw_poses);
+}
+
+cv::Mat EuRoC::GetImpl(std::string_view dtype, int i, int cam) const {
+  if (dtype == DataType::kImage) {
+    const size_t ind = ToInd(i, cam);
+    const auto& files = files_.at(DataType::kImage);
+    if (ind >= files.size()) return {};
+    cv::Mat raw = CvReadImage(prefix_[cam] + "/" + files.at(ind) + ".png");
+    cv::Mat rectified;
+    if (cam == 0) {
+      cv::remap(raw, rectified, calib0_M1_, calib0_M2_, cv::INTER_LINEAR);
+    } else {
+      cv::remap(raw, rectified, calib1_M1_, calib1_M2_, cv::INTER_LINEAR);
+    }
+    return rectified;
+  }
+
+  if (dtype == DataType::kIntrin) {
+    cv::Mat intrin = data_.at(DataType::kIntrin).clone();
+    if (cam == 1) {
+      intrin.at<double>(4) *= -1;
+    }
+    return intrin;
+  }
+
+  if (dtype == DataType::kPose) {
+    auto pose = data_.at(DataType::kPose).row(i).clone();
+    if (cam == 1) {
+      // Need pose of right camera
+      // T_w_r = T_w_l * T_l_r
+      //       = [R t] * [I b] = [R R*b + t]
+      //       = [R R.col(0) * b + t]
+      Eigen::Map<RowMat44d> T_w_l(pose.ptr<double>());
+      T_w_l.topRightCorner<3, 1>() += T_w_l.topLeftCorner<3, 1>() * baseline_;
+    }
+    return pose;
+  }
+  if (dtype == DataType::kTimestamp) {
+    const size_t ind = ToInd(i, cam);
+    const double timestamp =
+        std::stod(files_.at(DataType::kImage).at(ind)) / 1e9;
+    return cv::Mat(std::vector<double>{timestamp}, true);
+  }
+
+  return {};
+}
+
+void EuRoC::ReadTimestamps(const std::string& name,
+                           std::vector<std::string>& files) const {
+  std::ifstream ifs(name);
+  CHECK(ifs.good()) << "Unable to open file: " << name;
+
+  std::string line;
+  while (std::getline(ifs, line)) {
+    files.emplace_back(line);
+  }
+
+  const size_t num = files.size();
+  for (size_t i = 0; i < num; i++) {
+    files.emplace_back(files.at(i));  // add stereo
+  }
+}
+
+cv::Mat EuRoC::ReadIntrinsics(const std::string& calib0_file,
+                              const std::string& calib1_file) {
+  auto calib0 = Parameters::loadFromYaml(calib0_file);
+  auto calib1 = Parameters::loadFromYaml(calib1_file);
+  // construct extrinsic of left_T_right
+  const cv::Mat c1Tc0 = calib1.bTc.inv() * calib0.bTc;
+
+  // call rectification
+  cv::Mat R0, P0, R1, P1, Q;
+  cv::stereoRectify(calib0.K,
+                    calib0.D,
+                    calib1.K,
+                    calib1.D,
+                    calib0.resolution,
+                    c1Tc0.colRange(0, 3).rowRange(0, 3),
+                    c1Tc0.rowRange(0, 3).col(3),
+                    R0,
+                    R1,
+                    P0,
+                    P1,
+                    Q,
+                    cv::CALIB_ZERO_DISPARITY,
+                    0);  // 0 means valid pixels only
+
+  // init undistortion map
+  cv::initUndistortRectifyMap(calib0.K,
+                              calib0.D,
+                              R0,
+                              P0.colRange(0, 3).rowRange(0, 3),
+                              calib0.resolution,
+                              CV_32F,
+                              calib0_M1_,
+                              calib0_M2_);
+  cv::initUndistortRectifyMap(calib1.K,
+                              calib1.D,
+                              R1,
+                              P1.colRange(0, 3).rowRange(0, 3),
+                              calib1.resolution,
+                              CV_32F,
+                              calib1_M1_,
+                              calib1_M2_);
+
+  // update rectified parameters
+  cv::Mat K = P0.colRange(0, 3).rowRange(0, 3);
+  baseline_ = std::fabs(P1.at<double>(0, 3) / P1.at<double>(0, 0));
+  std::vector<double> intrin{K.at<double>(0, 0),
+                             K.at<double>(1, 1),
+                             K.at<double>(0, 2),
+                             K.at<double>(1, 2),
+                             baseline_};
+  return cv::Mat(intrin, true);
+}
+
+cv::Mat EuRoC::ReadPoses(const std::string& file,
+                         const std::vector<std::string>& timestamps) const {
+  // constexpr int kTransSize = 12;
+  std::ifstream ifs{file};
+  CHECK(ifs.good()) << "Unable to open file: " << file;
+
+  std::vector<double> data;
+  data.reserve(timestamps.size() * 16);
+
+  int index = 0;
+  double timestamp = 0.0, tx = 0.0, ty = 0.0, tz = 0.0, qx = 0.0, qy = 0.0,
+         qz = 0.0, qw = 1.0;
+  while (true) {
+    // read line
+    ifs >> timestamp >> tx >> ty >> tz >> qx >> qy >> qz >> qw;
+    ++index;
+
+    if (ifs.eof()) {
+      break;
+    }
+
+    Matrix3d R = Quaterniond(qw, qx, qy, qz).toRotationMatrix();
+    std::vector<double> pose{R(0, 0),
+                             R(0, 1),
+                             R(0, 2),
+                             tx,
+                             R(1, 0),
+                             R(1, 1),
+                             R(1, 2),
+                             ty,
+                             R(2, 0),
+                             R(2, 1),
+                             R(2, 2),
+                             tz,
+                             0,
+                             0,
+                             0,
+                             1};
+    std::copy_n(pose.begin(), 16, std::back_inserter(data));
+  }
+
+  CHECK_EQ(data.size() % kTransformDim, 0);
+  return cv::Mat(data, true)
+      .reshape(0, static_cast<int>(data.size()) / kTransformDim);
+}
+
+cv::Mat EuRoC::ConvertPoses(const cv::Mat& poses) const {
+  CHECK_EQ(poses.cols, kTransformDim);
+
+  cv::Mat transforms;
+  transforms.create(poses.rows, kTransformDim, CV_64FC1);
+
+  for (int i = 0; i < poses.rows; ++i) {
+    Eigen::Map<const RowMat44d> extrin_map(poses.ptr<double>(i));
+    const SE3d extrin(SO3d::fitToSO3(extrin_map.topLeftCorner<3, 3>()),
+                      extrin_map.topRightCorner<3, 1>());
+    Eigen::Map<RowMat44d> tf_map(transforms.ptr<double>(i));
+    tf_map = extrin.matrix();
+  }
+
+  return transforms;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+EuRoC::Parameters EuRoC::Parameters::loadFromYaml(const std::string& file) {
+  Parameters p;
+  cv::FileStorage fs(file, cv::FileStorage::READ);
+  if (!fs.isOpened()) {
+    std::cerr << "failed to open file: " << file << std::endl;
+    return p;
+  }
+
+  // read extrinsic
+  fs["T_BS"] >> p.bTc;
+  // read intrinsics
+  fs["intrinsics"] >> p.K;
+  // // read distortion
+  fs["distortion_coefficients"] >> p.D;
+
+  p.camera_model = (std::string)fs["camera_model"];
+  p.distortion_model = (std::string)fs["distortion_model"];
+  // read resolution
+  {
+    cv::FileNodeIterator it = fs["resolution"].begin();
+    int32_t width = (int32_t)*it;
+    ++it;
+    int32_t height = (int32_t)*it;
+    p.resolution = cv::Size2i(width, height);
+  }
+  p.rate = (float)fs["rate_hz"];
+
+  return p;
+}
+
+cv::Mat EuRoC::ReadAlignedTimestampsAndPoses(
+    const std::string& timestamp_file_name,
+    const std::string& pose_file_name,
+    std::vector<std::string>& files) {
+  // 1. read image timestamps
+  std::vector<std::string> image_timestamps_str;
+  std::vector<double> image_timestamps;
+  {
+    std::ifstream ifs(timestamp_file_name);
+    CHECK(ifs.good()) << "Unable to open file: " << timestamp_file_name;
+    std::string line;
+    while (std::getline(ifs, line)) {
+      image_timestamps_str.emplace_back(line);
+      image_timestamps.emplace_back(
+          std::round(std::stod(line) / 1e7) /
+          1e2);  // nsec to sec, round to second decimal
+    }
+  }
+
+  // 2. read pose timestamps
+  std::vector<double> data;
+  data.reserve(image_timestamps.size() * 16);
+  std::vector<double> pose_timestamps;
+  {
+    std::ifstream ifs{pose_file_name};
+    CHECK(ifs.good()) << "Unable to open file: " << pose_file_name;
+
+    int index = 0;
+    double timestamp = 0.0, tx = 0.0, ty = 0.0, tz = 0.0, qx = 0.0, qy = 0.0,
+           qz = 0.0, qw = 1.0;
+    while (true) {
+      // read line
+      ifs >> timestamp >> tx >> ty >> tz >> qx >> qy >> qz >> qw;
+      ++index;
+
+      if (ifs.eof()) {
+        break;
+      }
+      Matrix3d R = Quaterniond(qw, qx, qy, qz).toRotationMatrix();
+      std::vector<double> pose{R(0, 0),
+                               R(0, 1),
+                               R(0, 2),
+                               tx,
+                               R(1, 0),
+                               R(1, 1),
+                               R(1, 2),
+                               ty,
+                               R(2, 0),
+                               R(2, 1),
+                               R(2, 2),
+                               tz,
+                               0,
+                               0,
+                               0,
+                               1};
+      std::copy_n(pose.begin(), 16, std::back_inserter(data));
+      pose_timestamps.emplace_back(std::round(timestamp * 1e2) / 1e2);
+    }
+    CHECK_EQ(data.size() % kTransformDim, 0);
+  }
+
+  // 3. align image and pose timestamps
+  size_t si = 0u, sj = 0u;
+  while (si < image_timestamps.size() && sj < pose_timestamps.size()) {
+    if (image_timestamps[si] < pose_timestamps[sj]) {
+      ++si;
+    } else if (image_timestamps[si] > pose_timestamps[sj]) {
+      ++sj;
+    } else {
+      break;
+    }
+  }
+  int64_t ei = (int64_t)image_timestamps.size() - 1,
+          ej = (int64_t)pose_timestamps.size() - 1;
+  while (ei >= 0 && ej >= 0) {
+    if (image_timestamps[ei] < pose_timestamps[ej]) {
+      --ej;
+    } else if (image_timestamps[ei] > pose_timestamps[ej]) {
+      --ei;
+    } else {
+      break;
+    }
+  }
+
+  // index check
+  CHECK_GT(ei, si);
+  CHECK_GT(ej, sj);
+  CHECK_EQ(ei - si, ej - sj);
+
+  // copy timestamsp
+  std::copy_n(image_timestamps_str.begin() + si,
+              ei - si + 1,
+              std::back_inserter(files));
+  const size_t num = files.size();
+  for (size_t i = 0; i < num; i++) {
+    files.emplace_back(files.at(i));  // add stereo
+  }
+
+  // copy pose
+  std::vector<double> aligned_data(data.begin() + sj * kTransformDim,
+                                   data.begin() + (ej + 1) * kTransformDim);
+  return cv::Mat(aligned_data, true)
+      .reshape(0, static_cast<int>(aligned_data.size()) / kTransformDim);
+}
+
 std::string ExtractDatasetName(const std::string& data_dir) {
   std::string name;
   // Extract name from base_dir
@@ -718,6 +1059,8 @@ std::string ExtractDatasetName(const std::string& data_dir) {
     name = "tartan_air";
   } else if (absl::StrContains(data_dir, "realsense")) {
     name = "realsense";
+  } else if (absl::StrContains(data_dir, "EuRoC")) {
+    name = "EuRoC";
   }
 
   return name;
@@ -744,6 +1087,8 @@ Dataset CreateDataset(const std::string& data_dir, std::string name) {
     ds = TartanAir(data_dir);
   } else if (name == "realsense") {
     ds = StereoFolder::Create(name, data_dir, "infra1", "infra2", "calib.txt");
+  } else if (name == "EuRoC") {
+    ds = EuRoC(data_dir);
   } else {
     LOG(WARNING) << fmt::format("Invalid dataset name: {}", name);
   }

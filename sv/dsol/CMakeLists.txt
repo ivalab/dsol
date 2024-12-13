@@ -177,7 +177,8 @@ cc_library(
        sv_dsol_window
        sv_dsol_viz
        sv_util_summary
-       sv_util_ocv)
+       sv_util_ocv
+       sv_util_undistorter)
 cc_binary(
   NAME dsol_odom_play
   SRCS "odom_play.cpp"

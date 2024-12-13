@@ -20,6 +20,7 @@ struct DepthPoint {
   cv::Point2d px_{kBadPixD};
   double idepth_{kBadIdepth};
   mutable double info_{kBadInfo};
+  mutable double obs_info_{kMinInfo};
 
   Eigen::Vector2d uv() const noexcept { return {px_.x, px_.y}; }
   const cv::Point2d& px() const noexcept { return px_; }
@@ -38,6 +39,9 @@ struct DepthPoint {
   bool InfoOk() const noexcept { return info_ >= kOkInfo; }
   bool InfoMax() const noexcept { return info_ == kMaxInfo; }
 
+  bool ObsBad() const noexcept { return obs_info_ <= kMinInfo; }
+  bool ObsOk() const noexcept { return obs_info_ >= kOkInfo; }
+
   /// @brief Point is skipped for initialization of depth
   bool SkipInit() const noexcept { return DepthOk() || PixelBad(); }
 
@@ -55,6 +59,7 @@ struct DepthPoint {
   void UpdateInfo(double d_info) const noexcept {
     info_ = std::min(kMaxInfo, info_ + d_info);
   }
+  void UpdateObsInfo(double obs_info) const noexcept { obs_info_ = obs_info; }
 
   std::string Repr() const;
   friend std::ostream& operator<<(std::ostream& os, const DepthPoint& rhs) {
@@ -97,6 +102,16 @@ struct Patch {
   //         [0,  1]
   inline static const Point2dArray kOffsetPx = {
       cv::Point2d{0, 0}, {0, -1}, {-1, 0}, {1, 0}, {0, 1}};
+
+  // inline static const Point2dArray kOffsetPx = {cv::Point2d{0, 0},
+  //                                               {0, -1},
+  //                                               {-1, 0},
+  //                                               {1, 0},
+  //                                               {0, 1},
+  //                                               {-1, -1},
+  //                                               {1, -1},
+  //                                               {-1, 1},
+  //                                               {1, 1}};
 
   ArrayKd vals{};        // raw image intensity values
   Point2dArray grads{};  // raw image gradients

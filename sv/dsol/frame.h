@@ -83,6 +83,7 @@ struct Frame {
   ImagePyramid grays_l_;
   ImagePyramid grays_r_;
   FrameState state_;
+  double timestamp_;  // in seconds;
 
   Frame() = default;
   virtual ~Frame() noexcept = default;
@@ -118,6 +119,7 @@ struct Frame {
   FrameState& state() noexcept { return state_; }
   const FrameState& state() const noexcept { return state_; }
   const Sophus::SE3d& Twc() const noexcept { return state_.T_w_cl; }
+  double Timestamp() const noexcept { return timestamp_; }
 
   /// @brief Modifiers
   void SetGrays(const ImagePyramid& grays_l, const ImagePyramid& grays_r = {});
@@ -126,6 +128,7 @@ struct Frame {
   virtual void UpdateState(const Vector10dCRef& dx) noexcept {
     state_ += ErrorState{dx};
   }
+  void SetTimestamp(double timestamp) noexcept { timestamp_ = timestamp; }
 };
 
 /// @brief Stores variaus info of this keyframe

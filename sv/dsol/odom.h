@@ -2,10 +2,12 @@
 
 #include "sv/dsol/adjust.h"
 #include "sv/dsol/align.h"
+#include "sv/dsol/extra.h"
 #include "sv/dsol/select.h"
 #include "sv/dsol/stereo.h"
 #include "sv/dsol/window.h"
 #include "sv/util/cmap.h"
+#include "sv/util/logging.h"
 
 namespace sv::dsol {
 
@@ -22,15 +24,17 @@ struct OdomCfg {
   bool init_depth{true};        // init from depth
   bool init_stereo{false};      // init from stereo
   bool init_align{false};       // init from align
+  double depth_factor{1.0};     // convert pixel value to real depth in meters
 
   void Check() const;
   std::string Repr() const;
 };
 
 struct TrackStatus {
-  Sophus::SE3d Twc{};  // current estimate
-  bool add_kf{false};  // need to add a new kf
-  bool ok{false};      // tracking ok
+  Sophus::SE3d Twc{};        // current estimate
+  bool add_kf{false};        // need to add a new kf
+  bool ok{false};            // tracking ok
+  Sophus::SE3d Twc_prior{};  // prior pose
 };
 
 struct MapStatus {
@@ -42,6 +46,9 @@ struct MapStatus {
 struct OdomStatus {
   TrackStatus track;
   MapStatus map;
+  double tracking_time;
+  double mapping_time;
+  cv::Mat disp_frame;
 
   const auto& Twc() const noexcept { return track.Twc; }
   std::string Repr() const;
@@ -62,6 +69,7 @@ struct DirectOdometry {
   StereoMatcher matcher;
   FrameAligner aligner;
   BundleAdjuster adjuster;
+  StatsWriter::Ptr stats_writer_ptr;
 
   ImagePyramid grays_l;
   ImagePyramid grays_r;
@@ -85,14 +93,18 @@ struct DirectOdometry {
   void SetCamera(const Camera& cam) noexcept { camera = cam; }
 
   /// @brief Estimate odometry full version
-  OdomStatus Estimate(const cv::Mat& image_l,
+  OdomStatus Estimate(double timestamp,
+                      const cv::Mat& image_l,
                       const cv::Mat& image_r,
                       const Sophus::SE3d& dT,
                       const cv::Mat& depth = {});
-  TrackStatus Track(const cv::Mat& image_l,
+  TrackStatus Track(double timestamp,
+                    const cv::Mat& image_l,
                     const cv::Mat& image_r,
                     const Sophus::SE3d& dT);
   MapStatus Map(bool add_kf, const cv::Mat& depth);
+
+  const OdomCfg& cfg() const noexcept { return cfg_; }
 
  private:
   /// @brief Preprocess images, convert to gray and create pyramid
@@ -121,6 +133,7 @@ struct DirectOdometry {
   void BundleAdjust();
 
   void Summarize(bool new_kf) const;
+  cv::Mat CreateFrameForVisualization() const;
   void DrawFrame(const cv::Mat& depth) const;
   void DrawKeyframe() const;
 };
