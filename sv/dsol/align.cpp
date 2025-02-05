@@ -188,6 +188,16 @@ AlignStatus FrameAligner::AlignLevel(KeyframePtrSpan keyframes,
       return status;
     }
 
+    // Collect Hess.
+    if (out_stream_.is_open() && level == 0 && iter == 0) {
+      auto eigenvalues = hess.EstFramePoseCondition();
+      out_stream_ << std::setprecision(8) << frame.timestamp_ << " "
+                  << std::setprecision(20) << eigenvalues[0] << " "
+                  << eigenvalues[1] << " " << eigenvalues[2] << " "
+                  << eigenvalues[3] << " " << eigenvalues[4] << " "
+                  << eigenvalues[5] << "\n";
+    }
+
     const auto xs_max = Solve(hess, dim_frame);
 
     // This is a hacky LM implementation without re-evaluation costs twice,
@@ -353,7 +363,7 @@ FrameHessian1 AlignCost::Build(const FramePointGrid& points0,
           // optimization
           if (point1.info() == DepthPoint::kMinInfo) --point0.hid;
         }  // gc
-      },   // gr
+      },  // gr
       std::plus<>{});
 }
 

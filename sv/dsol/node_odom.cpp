@@ -165,6 +165,7 @@ void NodeOdom::InitOdom() {
       odom_.stats_writer_ptr->WriteMappingStatsHeader(AlignStatus::Header());
       odom_.stats_writer_ptr->WriteTrackingStatsHeader(AlignStatus::Header());
     }
+    odom_.aligner.SetOutputStream(save);
   }
   odom_.matcher = StereoMatcher(ReadStereoCfg({pnh_, "stereo"}));
   odom_.adjuster = BundleAdjuster(ReadDirectCfg({pnh_, "adjust"}));

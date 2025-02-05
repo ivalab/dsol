@@ -82,6 +82,8 @@ struct FrameHessian {
   using Vector10d = MatrixMNd<Dim::kFrame, 1>;
   using Matrix10d = MatrixMNd<Dim::kFrame, Dim::kFrame>;
   using Matrix26d = MatrixMNd<2, Dim::kPose>;
+  using Matrix6d = MatrixMNd<Dim::kPose, Dim::kPose>;
+  using Vector6d = MatrixMNd<Dim::kPose, 1>;
 
   int n{};     // num costs
   double c{};  // cost (r^2)
@@ -119,6 +121,34 @@ struct FrameHessian1 final : public FrameHessian {
   void AddPatchHess(const PatchHessian1& ph,
                     const Matrix26d& G,
                     int affine_offset) noexcept;
+
+  /**
+   * @brief Get the Pose Hessian object
+   *
+   * @return Matrix6d
+   */
+  Matrix6d GetPoseHessian() const {
+    // H is stored as Pose (R: 0-3, t: 3-6), Affine (left: 6-8, right: 8-10)
+    return H.topLeftCorner<Dim::kPose, Dim::kPose>();
+  }
+
+  Vector6d EstFramePoseCondition() const {
+    Vector6d eigenvalues;
+    // Rotation.
+    {
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(H.topLeftCorner(3, 3));
+      eigenvalues.head(3) = es.eigenvalues();
+      // Eigen::MatrixXd eigenvectors = es.eigenvectors();
+    }
+
+    // Translation.
+    {
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(H.block(3, 3, 3, 3));
+      eigenvalues.tail(3) = es.eigenvalues();
+      // Eigen::MatrixXd eigenvectors = es.eigenvectors();
+    }
+    return eigenvalues;
+  }
 };
 
 /// @brief Two frames hessian, used in adjuster

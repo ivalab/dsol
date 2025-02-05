@@ -1,5 +1,9 @@
 #pragma once
 
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+
 #include "sv/dsol/direct.h"
 #include "sv/dsol/hessian.h"
 
@@ -82,6 +86,11 @@ class FrameAligner final : public DirectMethod {
   /// @brief Allocate points1
   size_t Allocate(size_t num_kfs, const cv::Size& grid_size);
 
+  void SetOutputStream(const std::string& prefix) {
+    out_stream_.open(prefix + "_frame_condition.txt");
+    out_stream_ << "# r0 r1 r2 t0 t1 t2" << "\n";
+  }
+
  private:
   /// @brief Align frame for a single level
   AlignStatus AlignLevel(KeyframePtrSpan keyframes,
@@ -100,6 +109,7 @@ class FrameAligner final : public DirectMethod {
   int PrepPoints(KeyframePtrSpan keyframes, int count);
   double Solve(const FrameHessian1& hess, int dim, double lambda = 0.0);
   void UpdateTrackAndIdepth(KeyframePtrSpan keyframes, const Frame& frame);
+  std::ofstream out_stream_;
 };
 
 /// @brief
