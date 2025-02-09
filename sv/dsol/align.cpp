@@ -414,6 +414,19 @@ DepthPoint AlignCost::WarpPatch(const Patch& patch0,
   // z1 cloud be nan since z1' and q0 could both be 0
   if (!(z1 > cfg.min_depth)) return point1;
 
+  // Throttle the pixels with gradients, for h-test.
+  {
+    // Start from vertical and horizontal gradients.
+    static double l = std::tan(-15.0 * 3.14 / 180.0);
+    static double r = std::tan(15.0 * 3.14 / 180.0);
+    Eigen::Vector2d gxy = patch0.gxys().col(0);
+    // gxy.normalize();
+    const double gxy_tan = std::abs(gxy.y() / gxy.x());
+    if (gxy_tan < l || gxy_tan > r) {
+      return point1;
+    }
+  }
+
   // Stores warped patch value
   Patch patch1;
 
