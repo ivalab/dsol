@@ -15,6 +15,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Imu.h>
+#include <std_srvs/SetBool.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -59,6 +60,9 @@ struct NodeOdom {
   void AccCb(const sm::Imu& acc_msg);
   void GyrCb(const sm::Imu& gyr_msg);
 
+  bool HandlePauseRequest(std_srvs::SetBool::Request& req,
+                          std_srvs::SetBool::Response& res);
+
   void PublishOdom(const std_msgs::Header& header, const Sophus::SE3d& tf);
   void PublishCloud(const std_msgs::Header& header);
   void PublishDisplayImage(const std_msgs::Header& header,
@@ -91,6 +95,9 @@ struct NodeOdom {
   ros::Publisher pub_camera_pose_in_imu_;
   PosePathPublisher pub_odom_;
   ros::Publisher pub_disp_frame_;
+
+  ros::ServiceServer service_;
+  bool paused_ = false;
 
   // Publish robot wheel odometry info as reference only.
   void SendTransform(const ros::Time& time, const Sophus::SE3d& tf);
@@ -246,6 +253,11 @@ void NodeOdom::InitRosIO() {
       pnh_.advertise<geometry_msgs::PoseWithCovarianceStamped>(
           "/slam_pose_topic", 10);
 
+  // Service to pause the node.
+  service_ =
+      pnh_.advertiseService("/pause_slam", &NodeOdom::HandlePauseRequest, this);
+  paused_ = false;
+
   // Visualize robot on-board odometry.
   const bool vis_wheel_odom = pnh_.param<bool>("vis_wheel_odom", false);
   if (vis_wheel_odom) {
@@ -309,6 +321,11 @@ void NodeOdom::StereoCb(const sensor_msgs::ImageConstPtr& image0_ptr,
 void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
                              const sensor_msgs::ImageConstPtr& image1_ptr,
                              const sensor_msgs::ImageConstPtr& depth0_ptr) {
+  if (paused_) {
+    ROS_WARN_STREAM("DSOL has paused, waiting to resume.");
+    return;
+  }
+
   static size_t skip_img = 0;
   // @NOTE (yanwei) skip the first few images to avoid garbage data
   if (is_gazebo_ && skip_img < 10) {
@@ -399,7 +416,8 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   // TODO (yanwei) Temporary use odom for rotation.
   // if (false && dt > 0) {
   //   try {
-  //     geometry_msgs::TransformStamped odom_to_cam = tf_buffer_.lookupTransform(
+  //     geometry_msgs::TransformStamped odom_to_cam =
+  //     tf_buffer_.lookupTransform(
   //         odom_frame_, camera_frame_, prev_stamp, ros::Duration(1.0));
   //     const Sophus::SE3d last_T = Ros2Sophus(odom_to_cam.transform);
 
@@ -443,6 +461,14 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   PublishDisplayImage(header, status.disp_frame);
 
   prev_stamp = curr_header.stamp;
+}
+
+bool NodeOdom::HandlePauseRequest(std_srvs::SetBool::Request& req,
+                                  std_srvs::SetBool::Response& res) {
+  paused_ = req.data;
+  res.success = true;
+  res.message = paused_ ? "DSOL Paused" : "DSOL Resumed";
+  return true;
 }
 
 void NodeOdom::PublishOdom(const std_msgs::Header& header,
