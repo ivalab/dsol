@@ -169,6 +169,12 @@ AlignStatus FrameAligner::AlignLevel(KeyframePtrSpan keyframes,
   status.num_levels = 1;
   status.num_points = num_points;
 
+  if (status.num_points <= 50) {
+    LOG(WARNING) << "Insufficient points to align ... " << status.num_points;
+    status.converged = false;
+    return status;
+  }
+
   double xs_prev = 1e10;
   const auto xs_stop = cfg_.optm.max_xs * std::pow(2.0, level);
   // adaptive iters, more iters at higher res
@@ -304,7 +310,7 @@ int FrameAligner::PrepPoints(KeyframePtrSpan keyframes, int count) {
     prg.end = hid;
   }  // k
 
-  CHECK_GT(hid, 0);
+  // CHECK_GT(hid, 0);
   return hid;
 }
 

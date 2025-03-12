@@ -310,6 +310,10 @@ bool DirectOdometry::TrackFrame() {
 
   LOG(INFO) << fmt::format(log_color, "{}", status.Repr());
 
+  if (status.num_points < 50) {
+    return false;
+  }
+
   //  for (int k = 0; k < window.size(); ++k) {
   //    LOG(INFO) << k << ": " << window.KfAt(k).status().Repr();
   //  }
@@ -641,6 +645,16 @@ void DirectOdometry::DrawKeyframe() const {
   tiler.Tile("mask", selector.mask());
 
   cv::waitKey(1);
+}
+
+void DirectOdometry::Reset() {
+  frame = Frame();
+  // window.Reset();
+  // selector
+  // matcher;
+  aligner.Reset();
+  // adjuster = Adjuster();
+  Reinitialize();
 }
 
 std::string OdomStatus::Repr() const {

@@ -82,6 +82,7 @@ struct DirectOdometry {
   explicit DirectOdometry(const OdomCfg& cfg = {});
   /// @brief Initialize window
   void Init(const OdomCfg& cfg);
+  void Reset();
   /// @brief Allocate storage
   size_t Allocate(const ImagePyramid& grays, bool is_stereo);
 

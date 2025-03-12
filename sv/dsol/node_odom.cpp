@@ -42,6 +42,7 @@ struct NodeOdom {
 
   void InitOdom();
   void InitRosIO();
+  void Reset();
 
   void Cinfo0Cb(const sm::CameraInfo& cinfo0_msg);
   void Cinfo1Cb(const sm::CameraInfo& cinfo1_msg);
@@ -117,6 +118,8 @@ struct NodeOdom {
   bool publish_tf_{false};
 
   sm::PointCloud2 cloud_;
+  ros::Time prev_stamp_;
+  bool tracking_failed_ = false;
 };
 
 NodeOdom::NodeOdom(const ros::NodeHandle& pnh)
@@ -271,6 +274,13 @@ void NodeOdom::InitRosIO() {
   }
 }
 
+void NodeOdom::Reset() {
+  tracking_failed_ = false;
+  prev_stamp_ = ros::Time();
+  motion_.Init();
+  odom_.Reset();
+}
+
 void NodeOdom::Cinfo0Cb(const sensor_msgs::CameraInfo& cinfo0_msg) {
   // no stereo cam is available, read camera parameters from left.
   if (sub_cinfo1_.getTopic().empty()) {
@@ -322,6 +332,34 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
     return;
   }
 
+  if (tracking_failed_ && gyrs_.size() > 0) {
+    // check rotation.
+    Sophus::SO3d dR{};
+    for (size_t i = 0; i < gyrs_.size(); ++i) {
+      const auto& imu = gyrs_[i];
+      // Skip imu msg that is earlier than the previous odom
+      if (imu.header.stamp <= image0_ptr->header.stamp - ros::Duration(5))
+        continue;
+      if (imu.header.stamp > image0_ptr->header.stamp) break;
+
+      const auto prev_imu_stamp =
+          i == 0 ? imu.header.stamp : gyrs_.at(i - 1).header.stamp;
+      const double dt_imu = (imu.header.stamp - prev_imu_stamp).toSec();
+      CHECK_GT(dt_imu, -1e-9);
+      Eigen::Map<const Eigen::Vector3d> w(&imu.angular_velocity.x);
+      dR *= Sophus::SO3d::exp(w * dt_imu);
+      // ++n_imus;
+    }
+    if (dR.logAndTheta().theta < 0.17)  // 10 degree
+    {
+      // tracking_failed_ = false;
+      Reset();
+    }
+    else {
+      LOG(WARNING) << "Waiting to recover tracking ... ";
+    }
+  }
+
   // Start processing.
   const auto curr_header = image0_ptr->header;
   camera_frame_ = curr_header.frame_id;
@@ -355,9 +393,8 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   }
 
   // Get delta time
-  static ros::Time prev_stamp;
   const auto delta_duration =
-      prev_stamp.isZero() ? ros::Duration{} : curr_header.stamp - prev_stamp;
+      prev_stamp_.isZero() ? ros::Duration{} : curr_header.stamp - prev_stamp_;
   const auto dt = delta_duration.toSec();
   ROS_INFO_STREAM("dt: " << dt * 1000 << " ms");
 
@@ -371,7 +408,7 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
     // TODO(dsol): Use 0th order integration, maybe switch to 1st order later
     ROS_INFO_STREAM(
         fmt::format("prev: {}, curr: {}, first_imu: {}, last_imu: {}",
-                    prev_stamp.toSec(),
+                    prev_stamp_.toSec(),
                     curr_header.stamp.toSec(),
                     gyrs_.front().header.stamp.toSec(),
                     gyrs_.back().header.stamp.toSec()));
@@ -380,11 +417,11 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
     for (size_t i = 0; i < gyrs_.size(); ++i) {
       const auto& imu = gyrs_[i];
       // Skip imu msg that is earlier than the previous odom
-      if (imu.header.stamp <= prev_stamp) continue;
+      if (imu.header.stamp <= prev_stamp_) continue;
       if (imu.header.stamp > curr_header.stamp) continue;
 
       const auto prev_imu_stamp =
-          i == 0 ? prev_stamp : gyrs_.at(i - 1).header.stamp;
+          i == 0 ? prev_stamp_ : gyrs_.at(i - 1).header.stamp;
       const double dt_imu = (imu.header.stamp - prev_imu_stamp).toSec();
       CHECK_GT(dt_imu, 0);
       Eigen::Map<const Eigen::Vector3d> w(&imu.angular_velocity.x);
@@ -399,7 +436,8 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   // TODO (yanwei) Temporary use odom for rotation.
   // if (false && dt > 0) {
   //   try {
-  //     geometry_msgs::TransformStamped odom_to_cam = tf_buffer_.lookupTransform(
+  //     geometry_msgs::TransformStamped odom_to_cam =
+  //     tf_buffer_.lookupTransform(
   //         odom_frame_, camera_frame_, prev_stamp, ros::Duration(1.0));
   //     const Sophus::SE3d last_T = Ros2Sophus(odom_to_cam.transform);
 
@@ -424,7 +462,11 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   if (status.track.ok) {
     motion_.Correct(status.Twc(), dt);
   } else {
-    ROS_WARN_STREAM("Tracking failed (or 1st frame), slow motion model");
+    // ROS_WARN_STREAM("Tracking failed (or 1st frame), slow motion model");
+    ROS_WARN_STREAM("Tracking failed (or 1st frame), enter pause mode.");
+    tracking_failed_ = true;
+    // Reset();
+    return;
   }
 
   // Write to output
@@ -442,7 +484,7 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   }
   PublishDisplayImage(header, status.disp_frame);
 
-  prev_stamp = curr_header.stamp;
+  prev_stamp_ = curr_header.stamp;
 }
 
 void NodeOdom::PublishOdom(const std_msgs::Header& header,
