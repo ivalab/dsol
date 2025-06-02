@@ -21,6 +21,8 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <boost/circular_buffer.hpp>
+#include <mutex>
+#include <thread>
 
 #pragma GCC diagnostic pop
 
@@ -37,11 +39,45 @@ namespace sm = sensor_msgs;
 namespace gm = geometry_msgs;
 namespace mf = message_filters;
 
+class StampedState {
+ public:
+  bool isValid() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return header_.stamp.toSec() > 0.0 && !header_.frame_id.empty();
+  }
+
+  void set(const std_msgs::Header& header, const Sophus::SE3d& pose) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    header_ = header;
+    Tmc_ = pose;
+  }
+
+  const std_msgs::Header getHeader() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return header_;
+  }
+
+  const Sophus::SE3d& getPose() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return Tmc_;
+  }
+
+ private:
+  std_msgs::Header header_;
+  Sophus::SE3d Tmc_;
+  std::mutex mutex_;
+};
+
 struct NodeOdom {
   explicit NodeOdom(const ros::NodeHandle& pnh);
+  ~NodeOdom();
 
   void InitOdom();
   void InitRosIO();
+  void PublishTf(bool publish_tf,
+                 bool invert_tf,
+                 double transform_publish_period,
+                 double transform_timeout);
 
   void Cinfo0Cb(const sm::CameraInfo& cinfo0_msg);
   void Cinfo1Cb(const sm::CameraInfo& cinfo1_msg);
@@ -109,12 +145,12 @@ struct NodeOdom {
   bool is_gazebo_{false};
 
   std::string fixed_frame_{"fixed"};  // Defined by the first camera frame.
-  std::string map_frame_{"map"};
-  std::string odom_frame_{"odom"};
-  std::string camera_frame_{"camera"};
-  std::string base_frame_{"base_footprint"};
-  bool publish_map_to_odom_tf_{false};
-  bool publish_tf_{false};
+  std::string map_frame_{""};
+  std::string odom_frame_{""};
+  std::string camera_frame_{""};
+  std::string base_frame_{""};
+  StampedState stamped_state_{};
+  std::vector<std::shared_ptr<std::thread>> threads_;
 
   sm::PointCloud2 cloud_;
 };
@@ -133,6 +169,30 @@ NodeOdom::NodeOdom(const ros::NodeHandle& pnh)
   writer_ = TumFormatWriter(save);
   if (!writer_.IsDummy()) {
     ROS_WARN_STREAM("Writing results to: " << writer_.prefix());
+  }
+
+  // tf stuff.
+  {
+    bool publish_tf = pnh_.param<bool>("publish_tf", false);
+    bool invert_tf = pnh_.param<bool>("invert_tf", false);
+    double transform_publish_period =
+        pnh_.param<double>("transform_publish_period", 0.05);
+    double transform_timeout = pnh_.param<double>("transform_timeout", 0.0);
+    // bool publish_map_to_odom_tf =
+    // pnh_.param<bool>("publish_map_to_odom_tf", false);
+    threads_.push_back(
+        std::make_shared<std::thread>(std::bind(&NodeOdom::PublishTf,
+                                                this,
+                                                publish_tf,
+                                                invert_tf,
+                                                transform_publish_period,
+                                                transform_timeout)));
+  }
+}
+
+NodeOdom::~NodeOdom() {
+  for (auto t : threads_) {
+    t->join();
   }
 }
 
@@ -262,12 +322,86 @@ void NodeOdom::InitRosIO() {
 
   // Read frames.
   {
-    map_frame_ = pnh_.param<std::string>("map_frame", "map");
-    odom_frame_ = pnh_.param<std::string>("odom_frame", "odom");
-    base_frame_ = pnh_.param<std::string>("base_frame", "base_footprint");
-    camera_frame_ = pnh_.param<std::string>("camera_frame", "camera");
-    publish_map_to_odom_tf_ = pnh_.param<bool>("publish_map_to_odom_tf", false);
-    publish_tf_ = pnh_.param<bool>("publish_tf", false);
+    // map_frame_ = pnh_.param<std::string>("map_frame", "map");
+    odom_frame_ = pnh_.param<std::string>("odom_frame", "");
+    base_frame_ = pnh_.param<std::string>("base_frame", "");
+    camera_frame_ = pnh_.param<std::string>("camera_frame", "");
+  }
+}
+
+void NodeOdom::PublishTf(bool publish_tf,
+                         bool invert_tf,
+                         double transform_publish_period,
+                         double transform_timeout) {
+  if (!publish_tf || transform_publish_period <= 0.0) {
+    return;
+  }
+  bool publish_fixed_to_cam = odom_frame_.empty();
+
+  ros::Rate r(1.0 / transform_publish_period);
+  double last_stamp = -1.0;
+  while (ros::ok()) {
+    if (camera_frame_.empty()) {
+      ROS_WARN("TF Publisher: waiting for camera_frame to be ready ...");
+      usleep(1e3);
+      continue;
+    }
+    if (!stamped_state_.isValid()) {
+      ROS_WARN("TF Publisher: waiting for state to be ready ...");
+      usleep(1e3);
+      continue;
+    }
+
+    auto header = stamped_state_.getHeader();
+    auto Tmc = stamped_state_.getPose();
+    if (last_stamp > 0 && last_stamp >= header.stamp.toSec()) {
+      usleep(1e3);
+      continue;
+    }
+    last_stamp = header.stamp.toSec();
+
+    if (publish_fixed_to_cam) {
+      // Compose fixed_frame to camera.
+      // fixed_frame aligns with camera optical frame. (z points forward)
+      geometry_msgs::TransformStamped slam_tf;
+      slam_tf.header.stamp = header.stamp + ros::Duration(transform_timeout);
+      if (!invert_tf) {
+        slam_tf.header.frame_id = fixed_frame_;
+        slam_tf.child_frame_id = camera_frame_;
+        Sophus2Ros(Tmc, slam_tf.transform);
+      } else {
+        slam_tf.header.frame_id = camera_frame_;
+        slam_tf.child_frame_id = fixed_frame_;
+        Sophus2Ros(Tmc.inverse(), slam_tf.transform);
+      }
+      tfbr_.sendTransform(slam_tf);
+    } else {
+      try {
+        geometry_msgs::TransformStamped odom_to_cam =
+            tf_buffer_.lookupTransform(
+                odom_frame_, camera_frame_, header.stamp, ros::Duration(0.1));
+        Sophus::SE3d Toc;
+        Ros2Sophus(odom_to_cam.transform, Toc);
+        const Sophus::SE3d Tom = Toc * Tmc.inverse();
+
+        geometry_msgs::TransformStamped slam_tf;
+        slam_tf.header.stamp = header.stamp + ros::Duration(transform_timeout);
+        if (!invert_tf) {
+          slam_tf.header.frame_id = odom_frame_;
+          slam_tf.child_frame_id = fixed_frame_;
+          Sophus2Ros(Tom, slam_tf.transform);
+        } else {
+          slam_tf.header.frame_id = fixed_frame_;
+          slam_tf.child_frame_id = odom_frame_;
+          Sophus2Ros(Tom.inverse(), slam_tf.transform);
+        }
+        tfbr_.sendTransform(slam_tf);
+      } catch (tf2::TransformException& ex) {
+        ROS_WARN("%s", ex.what());
+      }
+    }
+    ros::spinOnce();
+    r.sleep();
   }
 }
 
@@ -396,26 +530,6 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
     if (n_imus > 0) dtf_pred.so3() = dR;
   }
 
-  // TODO (yanwei) Temporary use odom for rotation.
-  // if (false && dt > 0) {
-  //   try {
-  //     geometry_msgs::TransformStamped odom_to_cam = tf_buffer_.lookupTransform(
-  //         odom_frame_, camera_frame_, prev_stamp, ros::Duration(1.0));
-  //     const Sophus::SE3d last_T = Ros2Sophus(odom_to_cam.transform);
-
-  //     odom_to_cam = tf_buffer_.lookupTransform(
-  //         odom_frame_, camera_frame_, curr_header.stamp, ros::Duration(1.0));
-  //     const Sophus::SE3d cur_T = Ros2Sophus(odom_to_cam.transform);
-  //     dtf_pred = last_T.inverse() * cur_T;
-  //     std::cout << dtf_pred.matrix() << std::endl;
-  //   } catch (tf2::TransformException e) {
-  //     ROS_WARN_STREAM(
-  //         "tf execption caught when looking for odom to camera "
-  //         "transformation.\n"
-  //         << e.what());
-  //   }
-  // }
-
   const auto status = odom_.Estimate(
       curr_header.stamp.toSec(), image0, image1, dtf_pred, depth0);
   ROS_INFO_STREAM(status.Repr());
@@ -449,10 +563,7 @@ void NodeOdom::PublishOdom(const std_msgs::Header& header,
                            const Sophus::SE3d& tf) {
   // Publish odom poses
   const auto pose_msg = pub_odom_.Publish(header.stamp, tf);
-
-  if (publish_tf_) {
-    SendTransform(header.stamp, tf);
-  }
+  stamped_state_.set(header, tf);
 
   // Publish camera pose in imu frame
   {
@@ -520,56 +631,58 @@ void NodeOdom::RobotWheelOdomCb(const nav_msgs::OdometryConstPtr& msg) {
   pub_robot_wheel_path_.publish(robot_wheel_path_msg_);
 }
 
-void NodeOdom::SendTransform(const ros::Time& time, const Sophus::SE3d& Twc) {
-  if (base_frame_.empty()) {
-    // Compose fixed_frame to camera.
-    // fixed_frame aligns with camera optical frame. (z points forward)
-    geometry_msgs::TransformStamped fixed_to_cam;
-    fixed_to_cam.header.frame_id = fixed_frame_;
-    fixed_to_cam.header.stamp = time;
-    fixed_to_cam.child_frame_id = camera_frame_;
-    Sophus2Ros(Twc, fixed_to_cam.transform);
-    tfbr_.sendTransform(fixed_to_cam);
-  } else {
-    // Define map that aligns with base_frame
-    static bool is_map_defined = false;
-    static Sophus::SE3d Tmw;
-    if (!is_map_defined) {
-      geometry_msgs::TransformStamped base_to_cam = tf_buffer_.lookupTransform(
-          base_frame_, camera_frame_, time, ros::Duration(0.2));
-      Tmw = Ros2Sophus(base_to_cam.transform);
-      writer_.Write("camera_extrinsic", Tmw);
+// void NodeOdom::SendTransform(const ros::Time& time, const Sophus::SE3d& Twc)
+// {
+//   if (base_frame_.empty()) {
+//     // Compose fixed_frame to camera.
+//     // fixed_frame aligns with camera optical frame. (z points forward)
+//     geometry_msgs::TransformStamped fixed_to_cam;
+//     fixed_to_cam.header.frame_id = fixed_frame_;
+//     fixed_to_cam.header.stamp = time;
+//     fixed_to_cam.child_frame_id = camera_frame_;
+//     Sophus2Ros(Twc, fixed_to_cam.transform);
+//     tfbr_.sendTransform(fixed_to_cam);
+//   } else {
+//     // Define map that aligns with base_frame
+//     static bool is_map_defined = false;
+//     static Sophus::SE3d Tmw;
+//     if (!is_map_defined) {
+//       geometry_msgs::TransformStamped base_to_cam =
+//       tf_buffer_.lookupTransform(
+//           base_frame_, camera_frame_, time, ros::Duration(0.2));
+//       Tmw = Ros2Sophus(base_to_cam.transform);
+//       writer_.Write("camera_extrinsic", Tmw);
 
-      base_to_cam.header.frame_id = map_frame_;
-      base_to_cam.header.stamp = time;
-      base_to_cam.child_frame_id = fixed_frame_;
-      static_br_.sendTransform(base_to_cam);
-      is_map_defined = true;
-    }
-    if (!publish_map_to_odom_tf_) {
-      return;
-    }
-    // Publish map to odom.
-    const Sophus::SE3d Tmc = Tmw * Twc;
-    try {
-      const geometry_msgs::TransformStamped cam_to_odom =
-          tf_buffer_.lookupTransform(
-              camera_frame_, odom_frame_, time, ros::Duration(1.0));
-      geometry_msgs::TransformStamped map_to_odom;
-      map_to_odom.header.frame_id = map_frame_;
-      map_to_odom.header.stamp = time + ros::Duration(0.5);
-      map_to_odom.child_frame_id = odom_frame_;
-      Sophus2Ros(Tmc * Ros2Sophus(cam_to_odom.transform),
-                 map_to_odom.transform);
-      tfbr_.sendTransform(map_to_odom);
-    } catch (tf2::TransformException e) {
-      ROS_WARN_STREAM(
-          "tf execption caught when looking for odom to camera "
-          "transformation.\n"
-          << e.what());
-    }
-  }
-}
+//       base_to_cam.header.frame_id = map_frame_;
+//       base_to_cam.header.stamp = time;
+//       base_to_cam.child_frame_id = fixed_frame_;
+//       static_br_.sendTransform(base_to_cam);
+//       is_map_defined = true;
+//     }
+//     if (!publish_map_to_odom_tf_) {
+//       return;
+//     }
+//     // Publish map to odom.
+//     const Sophus::SE3d Tmc = Tmw * Twc;
+//     try {
+//       const geometry_msgs::TransformStamped cam_to_odom =
+//           tf_buffer_.lookupTransform(
+//               camera_frame_, odom_frame_, time, ros::Duration(1.0));
+//       geometry_msgs::TransformStamped map_to_odom;
+//       map_to_odom.header.frame_id = map_frame_;
+//       map_to_odom.header.stamp = time + ros::Duration(0.5);
+//       map_to_odom.child_frame_id = odom_frame_;
+//       Sophus2Ros(Tmc * Ros2Sophus(cam_to_odom.transform),
+//                  map_to_odom.transform);
+//       tfbr_.sendTransform(map_to_odom);
+//     } catch (tf2::TransformException e) {
+//       ROS_WARN_STREAM(
+//           "tf exception caught when looking for odom to camera "
+//           "transformation.\n"
+//           << e.what());
+//     }
+//   }
+// }
 
 }  // namespace sv::dsol
 
