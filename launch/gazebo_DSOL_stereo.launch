@@ -10,7 +10,7 @@
     <arg name="min_log_level" default="0"/>
     <arg name="also_log_to_console" default="true"/>
     <arg name="verbose_logging" default="-1"/>
-    <arg name="data" default="gazebo"/>
+    <arg name="data" default="gazebo_tt"/>
     <arg name="map_frame" default=""/>
     <arg name="odom_frame" default=""/>
     <arg name="base_frame" default=""/>

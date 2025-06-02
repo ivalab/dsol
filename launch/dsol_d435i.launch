@@ -15,6 +15,11 @@
     <arg name="do_rectification" default="false"/>
     <arg name="calib_dir" default=""/>
     <arg name="slam_pose_topic" default="/visual/pose"/>
+    <arg name="need_robot_tf" default="false"/>
+    <arg name="publish_tf" default="true"/>
+    <arg name="invert_tf" default="false"/>
+    <arg name="transform_publish_period" default="0.05"/>
+    <arg name="odom_frame" default="odom"/>
 
     <arg name="camera" default="/camera"/>
     <arg name="use_depth" default="false"/>
@@ -37,12 +42,16 @@
         <param name="data" type="string" value="$(arg data)"/>
         <param name="do_rectification" type="bool" value="$(arg do_rectification)"/>
         <param name="calib_dir" type="string" value="$(arg calib_dir)"/>
+        <param name="publish_tf" type="bool" value="$(arg publish_tf)"/>
+        <param name="invert_tf" type="bool" value="$(arg invert_tf)"/>
+        <param name="transform_publish_period" type="double" value="$(arg transform_publish_period)"/>
+        <param name="odom_frame" type="string" value="$(arg odom_frame)"/>
 
         <remap from="~cinfo0" to="$(arg camera)/infra1/camera_info"/>
         <remap from="~cinfo1" to="$(arg camera)/infra2/camera_info"/>
         <remap from="~image0" to="$(arg camera)/infra1/image_rect_raw"/>
         <remap from="~image1" to="$(arg camera)/infra2/image_rect_raw"/>
-        <!-- <remap from="~depth0" to="$(arg camera)/depth/image_rect_raw"/> -->
+        <remap from="~depth0" to="$(arg camera)/depth/image_rect_raw"/>
         <!-- <remap from="~gyr" to="$(arg camera)/gyro/sample"/> -->
         <remap from="~gyr" to="$(arg camera)/imu"/>
         <remap from="/slam_pose_topic" to="$(arg slam_pose_topic)"/>
@@ -52,5 +61,11 @@
     <group if="$(arg rviz)">
         <node pkg="rviz" type="rviz" name="dsol_rviz" output="screen" args="-d $(find dsol)/launch/dsol_odom.rviz">
         </node>
+    </group>
+
+    <group if="$(arg need_robot_tf)">
+        <include file="$(find closedloop_nav_slam)/launch/robot_state_publisher.launch">
+            <arg name="enable_odom_tf" value="true"/>
+        </include>
     </group>
 </launch>
