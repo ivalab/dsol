@@ -200,6 +200,8 @@ TrackStatus DirectOdometry::Track(double timestamp,
   // Note that this uses the same storage as grays_l and grays_r
   frame.SetGrays(grays_l, grays_r);
   frame.SetTwc(frame.Twc() * dT);
+  // frame.SetPoseCovariance(Matrix6d::Identity() * 1e-6);
+  frame.SetPoseCovariance(frame.Cov());
   frame.SetTimestamp(timestamp);
   status.Twc_prior = frame.Twc();
 
@@ -220,6 +222,7 @@ TrackStatus DirectOdometry::Track(double timestamp,
   }
 
   status.Twc = frame.Twc();
+  status.cov = frame.Cov();
   // Determine whether we need to add a keyframe
   status.add_kf = ShouldAddKeyframe();
   return status;

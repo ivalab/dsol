@@ -92,7 +92,9 @@ struct NodeOdom {
   void AccCb(const sm::Imu& acc_msg);
   void GyrCb(const sm::Imu& gyr_msg);
 
-  void PublishOdom(const std_msgs::Header& header, const Sophus::SE3d& tf);
+  void PublishOdom(const std_msgs::Header& header,
+                   const Sophus::SE3d& tf,
+                   const Matrix6d& cov);
   void PublishCloud(const std_msgs::Header& header);
   void PublishDisplayImage(const std_msgs::Header& header,
                            const cv::Mat& image);
@@ -542,7 +544,7 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
   header.frame_id = fixed_frame_;
   header.stamp = curr_header.stamp;
 
-  PublishOdom(header, status.Twc());
+  PublishOdom(header, status.Twc(), status.track.cov);
   if (status.map.remove_kf) {
     PublishCloud(header);
   }
@@ -552,20 +554,35 @@ void NodeOdom::StereoDepthCb(const sensor_msgs::ImageConstPtr& image0_ptr,
 }
 
 void NodeOdom::PublishOdom(const std_msgs::Header& header,
-                           const Sophus::SE3d& tf) {
+                           const Sophus::SE3d& tf,
+                           const Matrix6d& cov) {
   // Publish odom poses
   const auto pose_msg = pub_odom_.Publish(header.stamp, tf);
   stamped_state_.set(header, tf);
 
-  // Publish camera pose in robot body-aligned frame (x->forward, z->upward, y->leftward).
+  // Publish camera pose in robot body-aligned frame (x->forward, z->upward,
+  // y->leftward).
   {
-    Sophus::SE3d Tic(
-        (Eigen::Matrix3d() << 0, 0, 1, -1, 0, 0, 0, -1, 0).finished(),
-        Eigen::Vector3d::Zero());
+    // Sophus::SE3d Tic(
+    //     (Eigen::Matrix3d() << 0, 0, 1, -1, 0, 0, 0, -1, 0).finished(),
+    //     Eigen::Vector3d::Zero());
+    Sophus::SE3d Tic;
     geometry_msgs::PoseWithCovarianceStamped camera_pose_in_imu;
-    camera_pose_in_imu.header.frame_id = "map";
+    camera_pose_in_imu.header.frame_id = fixed_frame_;
     camera_pose_in_imu.header.stamp = header.stamp;
     Sophus2Ros(Tic * tf, camera_pose_in_imu.pose.pose);
+
+    // Set covariance (flip rotation and position)
+    for (size_t i = 0u; i < 6u; i++) {
+      size_t r = i;
+      if (r >= 3u) {
+        r -= 3u;
+      } else {
+        r += 3u;
+      }
+      size_t index = i * 7u;
+      camera_pose_in_imu.pose.covariance[index] = cov(r, r);
+    }
     pub_camera_pose_in_imu_.publish(camera_pose_in_imu);
 
     // nav_msgs::Odometry camera_odom_in_imu;

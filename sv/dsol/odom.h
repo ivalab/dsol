@@ -31,10 +31,11 @@ struct OdomCfg {
 };
 
 struct TrackStatus {
-  Sophus::SE3d Twc{};        // current estimate
-  bool add_kf{false};        // need to add a new kf
-  bool ok{false};            // tracking ok
-  Sophus::SE3d Twc_prior{};  // prior pose
+  Sophus::SE3d Twc{};                  // current estimate
+  Matrix6d cov{Matrix6d::Identity()};  // current estimated covariance
+  bool add_kf{false};                  // need to add a new kf
+  bool ok{false};                      // tracking ok
+  Sophus::SE3d Twc_prior{};            // prior pose
 };
 
 struct MapStatus {

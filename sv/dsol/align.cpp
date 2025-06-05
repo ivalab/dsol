@@ -214,6 +214,11 @@ AlignStatus FrameAligner::AlignLevel(KeyframePtrSpan keyframes,
     status.cost = hess.cost();
     status.num_costs = hess.num_costs();
 
+    // if (level == 0 && iter == 0) {
+    {
+      frame.UpdatePoseCovariance(hess.GetPoseCov());
+    }
+
     // converged
     if (xs_max < xs_stop && iter > 1) {
       status.converged = true;
@@ -353,7 +358,7 @@ FrameHessian1 AlignCost::Build(const FramePointGrid& points0,
           // optimization
           if (point1.info() == DepthPoint::kMinInfo) --point0.hid;
         }  // gc
-      },   // gr
+      },  // gr
       std::plus<>{});
 }
 

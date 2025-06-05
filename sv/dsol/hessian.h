@@ -119,6 +119,49 @@ struct FrameHessian1 final : public FrameHessian {
   void AddPatchHess(const PatchHessian1& ph,
                     const Matrix26d& G,
                     int affine_offset) noexcept;
+
+  /**
+   * @brief Get the Pose Hessian object
+   *
+   * @return Matrix6d
+   */
+  Matrix6d GetPoseHessian() const {
+    // H is stored as Pose (R: 0-3, t: 3-6), Affine (left: 6-8, right: 8-10)
+    return H.topLeftCorner<Dim::kPose, Dim::kPose>();
+  }
+
+  Matrix6d GetPoseCov() const {
+    // H is stored as Pose (R: 0-3, t: 3-6), Affine (left: 6-8, right: 8-10)
+    MatrixXd H_pose = H.topLeftCorner(6, 6);
+    // MatrixXd H_affine = H.bottomRightCorner(4, 4);
+    // MatrixXd H_cross = H.topRightCorner(6, 4);
+    // // Schur complement
+    // MatrixXd H_marginalized =
+    //     H_pose - H_cross * H_affine.inverse() * H_cross.transpose();
+    // // Covariance
+    // MatrixXd pose_cov = H_marginalized.ldlt().solve(MatrixXd::Identity(6,
+    // 6));
+    MatrixXd pose_cov = H_pose.ldlt().solve(MatrixXd::Identity(6, 6));
+    return pose_cov;
+  }
+
+  Vector6d EstFramePoseCondition() const {
+    Vector6d eigenvalues;
+    // Rotation.
+    {
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(H.topLeftCorner(3, 3));
+      eigenvalues.head(3) = es.eigenvalues();
+      // Eigen::MatrixXd eigenvectors = es.eigenvectors();
+    }
+
+    // Translation.
+    {
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(H.block(3, 3, 3, 3));
+      eigenvalues.tail(3) = es.eigenvalues();
+      // Eigen::MatrixXd eigenvectors = es.eigenvectors();
+    }
+    return eigenvalues;
+  }
 };
 
 /// @brief Two frames hessian, used in adjuster

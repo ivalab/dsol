@@ -43,6 +43,7 @@ struct ErrorState {
 /// @brief Frame state
 struct FrameState {
   Sophus::SE3d T_w_cl;   // pose of left camera
+  Matrix6d cov;          // pose covariance of left camera
   AffineModel affine_l;  // affine of left image
   AffineModel affine_r;  // affine of right image
 
@@ -119,12 +120,18 @@ struct Frame {
   FrameState& state() noexcept { return state_; }
   const FrameState& state() const noexcept { return state_; }
   const Sophus::SE3d& Twc() const noexcept { return state_.T_w_cl; }
+  const Matrix6d& Cov() const noexcept { return state_.cov; }
   double Timestamp() const noexcept { return timestamp_; }
 
   /// @brief Modifiers
   void SetGrays(const ImagePyramid& grays_l, const ImagePyramid& grays_r = {});
   void SetTwc(const Sophus::SE3d& T_w_cl) noexcept { state_.T_w_cl = T_w_cl; }
   void SetState(const FrameState& state) noexcept { state_ = state; }
+  void SetPoseCovariance(const Matrix6d& cov) { state_.cov = cov; }
+  void UpdatePoseCovariance(const Matrix6d& cov) {
+    auto adj_se3 = state_.T_w_cl.Adj();
+    state_.cov += adj_se3 * cov * adj_se3.transpose();
+  }
   virtual void UpdateState(const Vector10dCRef& dx) noexcept {
     state_ += ErrorState{dx};
   }

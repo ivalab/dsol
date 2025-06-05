@@ -14,7 +14,7 @@
     <arg name="data" default="d435i"/>
     <arg name="do_rectification" default="false"/>
     <arg name="calib_dir" default=""/>
-    <arg name="slam_pose_topic" default="/visual/pose"/>
+    <arg name="slam_pose_topic" default="/dsol/pose"/>
     <arg name="need_robot_tf" default="false"/>
     <arg name="publish_tf" default="true"/>
     <arg name="invert_tf" default="false"/>

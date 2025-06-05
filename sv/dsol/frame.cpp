@@ -24,7 +24,8 @@ std::string Frame::Repr() const {
 Frame::Frame(const ImagePyramid& grays_l,
              const Sophus::SE3d& tf_w_cl,
              const AffineModel& affine_l)
-    : grays_l_{grays_l}, state_{tf_w_cl, affine_l, {0, 0}} {
+    : grays_l_{grays_l},
+      state_{tf_w_cl, Matrix6d::Identity() * 1e-6, affine_l, {0, 0}} {
   CHECK(IsImagePyramid(grays_l_));
 }
 
@@ -197,7 +198,7 @@ int Keyframe::InitPatchesLevel(int level, int gsize) {
             patch.ExtractAround3(image, point.px());
             ++n_patches;
           }  // gc
-        },   // gr
+        },  // gr
         std::plus<>{});
   }
 
@@ -238,7 +239,7 @@ int Keyframe::InitPatchesLevel(int level, int gsize) {
           patch.ExtractAround(image, px_s);
           ++n_patches;
         }  // gc
-      },   // gr
+      },  // gr
       std::plus<>{});
 }
 
@@ -280,7 +281,7 @@ int Keyframe::InitFromDepth(const cv::Mat& depth, double info) {
         ++n_init;
       }
     }  // gc
-  }    // gr
+  }  // gr
 
   status_.depths += n_init;
   return n_init;
@@ -310,7 +311,7 @@ int Keyframe::InitFromDisp(const cv::Mat& disp,
       point.SetIdepthInfo(idepth, info);
       ++n_init;
     }  // gc
-  }    // gr
+  }  // gr
 
   status_.depths += n_init;
   return n_init;
@@ -338,7 +339,7 @@ int Keyframe::InitFromAlign(const cv::Mat& idepth, double info) {
       point.SetIdepthInfo(cell[0] / cell[1], info);
       ++n_init;
     }  // gc
-  }    // gr
+  }  // gr
 
   status_.depths += n_init;
   return n_init;
