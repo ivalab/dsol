@@ -1,5 +1,7 @@
 #include "sv/dsol/align.h"
 
+#include <iostream>
+
 #include "sv/dsol/pixel.h"
 #include "sv/dsol/solve.h"
 #include "sv/util/logging.h"
@@ -409,6 +411,15 @@ DepthPoint AlignCost::WarpPatch(const Patch& patch0,
   // z1 cloud be nan since z1' and q0 could both be 0
   if (!(z1 > cfg.min_depth)) return point1;
 
+  if (cfg.depth_prior) {
+    const auto measured_depth = DepthAtD(depth1l, point1.px());  // no scale
+    if (measured_depth > cfg.min_depth) {
+      point1.idepth_prior_ = 1.0 / measured_depth;
+    } else {
+      point1.idepth_prior_ = DepthPoint::kBadIdepth;
+    }
+  }
+
   // Stores warped patch value
   Patch patch1;
 
@@ -418,7 +429,7 @@ DepthPoint AlignCost::WarpPatch(const Patch& patch0,
     patch1.ExtractIntensity(gray1l, px1s);
 
     // Left image cam_ind = 0
-    const auto ok = UpdateHess(patch0, point0, patch1, hess, 0);
+    const auto ok = UpdateHess(patch0, point0, patch1, point1, hess, 0);
     point1.info_ = ok ? DepthPoint::kOkInfo : DepthPoint::kBadInfo;
   }
 
@@ -431,7 +442,7 @@ DepthPoint AlignCost::WarpPatch(const Patch& patch0,
       patch1.ExtractIntensity(gray1r, px1s);
 
       // Right image cam_ind = 1
-      UpdateHess(patch0, point0, patch1, hess, 1);
+      UpdateHess(patch0, point0, patch1, point1, hess, 1);
     }
   }
 
@@ -440,7 +451,7 @@ DepthPoint AlignCost::WarpPatch(const Patch& patch0,
 
 AlignCost::JacGeo AlignCost::CalcJacGeo(const FramePoint& point0,
                                         int cam_ind) const noexcept {
-  JacGeo du_dx;
+  JacGeo Js;
 
   //  if (cam_ind == 0) {
   //    du_dx.noalias() = camera.fxy().matrix().asDiagonal() * point0.dn_dx;
@@ -473,15 +484,27 @@ AlignCost::JacGeo AlignCost::CalcJacGeo(const FramePoint& point0,
 
   const auto q0 = point0.idepth();
   const double bq0 = q0 * camera.baseline() * cam_ind;
-  du_dx.leftCols<3>().noalias() = -du_dp * Hat3d(nc0.x() + bq0, nc0.y(), 1.0);
-  du_dx.rightCols<3>().noalias() = du_dp * q0;
+  Js.du_dx.leftCols<3>().noalias() = -du_dp * Hat3d(nc0.x() + bq0, nc0.y(), 1.0);
+  Js.du_dx.rightCols<3>().noalias() = du_dp * q0;
 
-  return du_dx;
+  // FIXME: BUGGY CODE in assigning matrix values.
+  // const auto dp_dr = -Hat3d(nc0.x() + bq0, nc0.y(), 1.0);
+  // const auto dp_dt = q0;
+  // std::cout << dp_dr << "\n";
+  // std::cout << dp_dt << "\n";
+  // const auto dp_dx = (Matrix36d() << dp_dr, dp_dt).finished();
+  // std::cout << dp_dx << "\n";
+  // Js.du_dx.noalias() = du_dp * dp_dx;
+  // std::cout << Js.du_dx << std::endl;
+  // Js.dpz_dx = dp_dx.row(2);
+
+  return Js;
 }
 
 bool AlignCost::UpdateHess(const Patch& patch0,
                            const FramePoint& point0,
                            const Patch& patch1,
+                           const DepthPoint& point1,
                            FrameHessian1& hess,
                            int cam_ind) const noexcept {
   // Cost function is
@@ -519,8 +542,18 @@ bool AlignCost::UpdateHess(const Patch& patch0,
     ph.SetA(It, At, rs, ws);
   }
 
-  const auto dn_dx = CalcJacGeo(point0, cam_ind);
-  hess.AddPatchHess(ph, dn_dx, affi);
+  const auto Js = CalcJacGeo(point0, cam_ind);
+  hess.AddPatchHess(ph, Js.du_dx, affi);
+
+  // Add depth term from left_cam
+  if (false && !cfg.stereo && cam_ind == 0 && cfg.depth_prior &&
+      point1.idepth() > 0.0) {
+    const double pred_id = point1.idepth();
+    double res = pred_id - point1.IdepthPrior();
+    double weight = 1e2;
+    const auto did_dx = -pred_id * pred_id * Js.dpz_dx;
+    hess.AddDepthPriorHess(did_dx, res, weight);
+  }
 
   return true;
 }

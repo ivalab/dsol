@@ -1,0 +1,25 @@
+odom:
+  marg: false
+  num_kfs: 5
+  num_levels: 3
+  vis_min_depth: 0.1
+  min_track_ratio: 0.5
+  reinit: true
+  init_depth: true
+  init_stereo: false
+  init_align: true
+  depth_factor: 1000.0
+select:
+  min_grad: 8
+stereo:
+  match_level: 2
+  min_depth: 0.5
+  min_zncc: 0.85
+align:
+  max_iters: 6
+  affine: false
+  stereo: false
+adjust:
+  affine: false
+  stereo: false
+  depth_prior: true

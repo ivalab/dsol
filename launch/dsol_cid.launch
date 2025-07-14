@@ -3,11 +3,11 @@
     <env if="$(arg debug)" name="ROSCONSOLE_CONFIG_FILE" value="$(find dsol)/launch/debug.conf"/>
 
     <arg name="gdb"                               default="false"/>         <!-- Launch nodes in gdb for debugging (apt install xterm gdb) -->
-    <arg     if="$(arg gdb)" name="launch_prefix" default="xterm -e gdb -q -ex run --args"/>
+    <arg     if="$(arg gdb)" name="launch_prefix" default="gdb -ex run --args"/>
     <arg unless="$(arg gdb)" name="launch_prefix" default=""/>
 
     <arg name="tbb" default="0"/>
-    <arg name="log" default="1"/>
+    <arg name="log" default="5"/>
     <arg name="vis" default="0"/>
     <arg name="rviz" default="false"/>
     <arg name="save" default="/tmp/dsol"/>
@@ -15,7 +15,7 @@
     <arg name="min_log_level" default="4"/>
     <arg name="also_log_to_console" default="true"/>
     <arg name="verbose_logging" default="-1"/>
-    <arg name="data" default="d435i"/>
+    <arg name="data" default="cid"/>
     <arg name="do_rectification" default="false"/>
     <arg name="calib_dir" default=""/>
     <arg name="slam_pose_topic" default="/dsol/pose"/>
@@ -26,8 +26,8 @@
     <arg name="odom_frame" default="odom"/>
 
     <arg name="camera" default="/camera"/>
-    <arg name="use_depth" default="false"/>
-    <arg name="use_stereo" default="true"/>
+    <arg name="use_depth" default="true"/>
+    <arg name="use_stereo" default="false"/>
 
     <node pkg="dsol" type="sv_dsol_node_odom" name="dsol_odom" output="screen" launch-prefix="$(arg launch_prefix)">
         <rosparam command="load" file="$(find dsol)/config/dsol.yaml"/>
@@ -51,11 +51,11 @@
         <param name="transform_publish_period" type="double" value="$(arg transform_publish_period)"/>
         <param name="odom_frame" type="string" value="$(arg odom_frame)"/>
 
-        <remap from="~cinfo0" to="$(arg camera)/infra1/camera_info"/>
+        <remap from="~cinfo0" to="$(arg camera)/rgb/camera_info"/>
         <remap from="~cinfo1" to="$(arg camera)/infra2/camera_info"/>
-        <remap from="~image0" to="$(arg camera)/infra1/image_rect_raw"/>
-        <remap from="~image1" to="$(arg camera)/infra2/image_rect_raw"/>
-        <remap from="~depth0" to="$(arg camera)/depth/image_rect_raw"/>
+        <remap from="~image0" to="$(arg camera)/rgb/image_color"/>
+        <!-- <remap from="~image1" to="$(arg camera)/infra2/image_rect_raw"/> -->
+        <remap from="~depth0" to="$(arg camera)/depth/image"/>
         <!-- <remap from="~gyr" to="$(arg camera)/gyro/sample"/> -->
         <remap from="~gyr" to="$(arg camera)/imu"/>
         <remap from="/slam_pose_topic" to="$(arg slam_pose_topic)"/>
@@ -72,4 +72,10 @@
             <arg name="enable_odom_tf" value="true"/>
         </include>
     </group>
+
+    <node pkg="imu_transformer" type="imu_transformer_node" name="imu_transformer_node">
+        <param name="target_frame" value="camera_color_optical_frame"/>
+        <remap from="/imu_in/data" to="/imu/data"/>
+        <remap from="/imu_out/data" to="/camera/imu"/>
+    </node>
 </launch>

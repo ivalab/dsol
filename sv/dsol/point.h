@@ -19,12 +19,14 @@ struct DepthPoint {
 
   cv::Point2d px_{kBadPixD};
   double idepth_{kBadIdepth};
+  double idepth_prior_{kBadIdepth};
   mutable double info_{kBadInfo};
   mutable double obs_info_{kMinInfo};
 
   Eigen::Vector2d uv() const noexcept { return {px_.x, px_.y}; }
   const cv::Point2d& px() const noexcept { return px_; }
   double idepth() const noexcept { return idepth_; }
+  double IdepthPrior() const noexcept { return idepth_prior_; }
   double info() const noexcept { return info_; }
 
   /// @brief Point is not selected by PixelSelector
@@ -52,7 +54,7 @@ struct DepthPoint {
 
   /// @brief Modifiers
   void SetPix(const cv::Point2d& px) noexcept { px_ = px; }
-  void SetIdepthInfo(double idepth, double info) noexcept;
+  void SetIdepthInfo(double idepth, double info, bool prior = false) noexcept;
   void UpdateIdepth(double d_idepth) noexcept {
     idepth_ = std::max(0.0, idepth_ + d_idepth);
   }
@@ -71,6 +73,7 @@ struct DepthPoint {
 struct FramePoint final : public DepthPoint {
   using Matrix23d = Eigen::Matrix<double, 2, 3>;
   using Matrix26d = Eigen::Matrix<double, 2, 6>;
+  using Matrix16d = Eigen::Matrix<double, 1, 6>;
   static constexpr int kBadHid = -1;
 
   mutable int hid{kBadHid};  // hessian id used in PBA, also used in align
@@ -115,6 +118,7 @@ struct Patch {
 
   ArrayKd vals{};        // raw image intensity values
   Point2dArray grads{};  // raw image gradients
+  // ArrayKd idepths{};     // raw inverse depths
 
   /// @brief Whether this patch is good
   bool Bad() const noexcept { return vals[kCenter] < 0; }
@@ -140,6 +144,7 @@ struct Patch {
   void ExtractAround2(const cv::Mat& image, const cv::Point2d& px) noexcept;
   void ExtractAround3(const cv::Mat& image, const cv::Point2d& px) noexcept;
   void ExtractIntensity(const cv::Mat& image, const Point2dArray& pxs) noexcept;
+  // void ExtractDepth(const cv::Mat& image, const Point2dArray& pxs) noexcept;
 
   /// @brief If any px is OOB
   static bool IsAnyOut(const cv::Mat& mat,

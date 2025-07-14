@@ -79,7 +79,10 @@ DirectCost::DirectCost(int level,
                        const Camera& camera_scaled,
                        const Frame& frame1,
                        const DirectCostCfg& cost_cfg)
-    : camera{camera_scaled}, gray1l{frame1.grays_l().at(level)}, cfg{cost_cfg} {
+    : camera{camera_scaled},
+      gray1l{frame1.grays_l().at(level)},
+      depth1l(frame1.depth_l()),
+      cfg{cost_cfg} {
   CHECK(!gray1l.empty());
   // This is to make sure scale of camera matches scale of image pyramid
   CHECK_EQ(camera.width(), gray1l.cols);

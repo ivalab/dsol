@@ -5,12 +5,15 @@
 
 namespace sv::dsol {
 
-void DepthPoint::SetIdepthInfo(double idepth, double info) noexcept {
+void DepthPoint::SetIdepthInfo(double idepth,
+                               double info,
+                               bool prior) noexcept {
   CHECK(PixelOk());
   CHECK_GE(idepth, 0);
   CHECK_LE(info, kMaxInfo);
   idepth_ = idepth;
   info_ = info;
+  idepth_prior_ = prior ? idepth : kBadIdepth;
 }
 
 std::string DepthPoint::Repr() const {
@@ -92,6 +95,16 @@ void Patch::ExtractIntensity(const cv::Mat& image,
     vals[k] = ValAtD<uchar>(image, pxs[k]);
   }
 }
+
+// void ExtractDepth(const cv::Mat& image, const Point2dArray& pxs) noexcept {
+//   for (int k = 0; k < Patch::kSize; ++k) {
+//     idepths[k] = -1.0;  // invalid
+//     double d = DepthAtD(image, pxs[k]);
+//     if (d > 0.1) {  // Reject depth too close
+//       idepths[k] = 1.0 / d;
+//     }
+//   }
+// }
 
 bool Patch::IsAnyOut(const cv::Mat& mat,
                      const Point2dArray& pxs,

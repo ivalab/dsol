@@ -30,6 +30,7 @@ struct DirectCostCfg {
   int max_outliers{1};      // max outliers in each patch
   double grad_factor{1.5};  // r^2 > grad_factor * g^2 is outlier
   double min_depth{0.2};    // min depth to skip when project
+  bool depth_prior{false};  // use depth prior if available
 
   void Check() const;
   std::string Repr() const;
@@ -134,6 +135,7 @@ struct DirectCost {
   Camera camera;                // camera at this level/scale
   cv::Mat gray1l;               // gray0 of frame1
   cv::Mat gray1r;               // gray1 of frame1
+  cv::Mat depth1l;              // depth of frame1 at raw level
   Eigen::Isometry3d T10;        // transform from 0 to 1
   Eigen::Array3d eas{0, 0, 0};  // exp^(a0l, a1l, a1r)
   Eigen::Array3d bs{0, 0, 0};   // (b0l, b1l, b1r)

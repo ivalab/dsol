@@ -150,6 +150,24 @@ void FrameHessian1::AddPatchHess(const PatchHessian1& ph,
   b.segment<da>(ia) -= ph.Atr;
 }
 
+void FrameHessian1::AddDepthPriorHess(const Matrix16d& G,
+                                      const double res,
+                                      const double weight) noexcept {
+  // [Gt*(It*I)*G, Gt*(It*A)] | [Gt*(It*r)]
+  // [   (At*I)*G,    (At*A)] | [   (At*r)]
+
+  ++n;
+  // FrameHessian1 is 10x10, where the variable is ordered as follows
+  // [pose, aff0, aff1]
+  // Add pose block, which is always top-left 6x6
+  // Gt * ItI * G
+  H.topLeftCorner<dp, dp>().noalias() += G.transpose() * weight * weight * G;
+  // Gt * It * r
+  b.head<dp>().noalias() -= G.transpose() * weight * res;
+  // cost
+  c += weight * weight * res * res;
+}
+
 /// ============================================================================
 FrameHessian2::FrameHessian2(int fi, int fj) : i_{fi}, j_{fj} {
   CHECK_GE(fi, 0);
@@ -503,6 +521,16 @@ void FramePointHessian::AddPatchHess(const PatchHessian2& ph,
   Hpm.block<da, dd>(ia0, hid).noalias() += ph.ItA0.transpose() * Gd;
   // A1t * I * Gd
   Hpm.block<da, dd>(ia1, hid).noalias() += ph.ItA1.transpose() * Gd;
+}
+
+void FramePointHessian::AddDepthPriorHess(const double res,
+                                          const double weight,
+                                          const Eigen::Vector3i& ijh) noexcept {
+  const int hid = ijh[2];  // index of depth point
+  // Gdt * ItI * Gd
+  Hmm[hid] += weight * weight;
+  // Gdt * Itr
+  bm[hid] -= weight * res;
 }
 
 void FramePointHessian::Solve() {

@@ -83,6 +83,7 @@ struct Frame {
   // images
   ImagePyramid grays_l_;
   ImagePyramid grays_r_;
+  cv::Mat depth_l_;  // depth image at raw level
   FrameState state_;
   double timestamp_;  // in seconds;
 
@@ -116,6 +117,7 @@ struct Frame {
   const ImagePyramid& grays_l() const noexcept { return grays_l_; }
   const ImagePyramid& grays_r() const noexcept { return grays_r_; }
   const cv::Mat& gray_l() const noexcept { return grays_l_.front(); }
+  const cv::Mat& depth_l() const noexcept { return depth_l_; }
 
   FrameState& state() noexcept { return state_; }
   const FrameState& state() const noexcept { return state_; }
@@ -124,7 +126,9 @@ struct Frame {
   double Timestamp() const noexcept { return timestamp_; }
 
   /// @brief Modifiers
-  void SetGrays(const ImagePyramid& grays_l, const ImagePyramid& grays_r = {});
+  void SetGrays(const ImagePyramid& grays_l,
+                const ImagePyramid& grays_r = {},
+                const cv::Mat& depth = {});
   void SetTwc(const Sophus::SE3d& T_w_cl) noexcept { state_.T_w_cl = T_w_cl; }
   void SetState(const FrameState& state) noexcept { state_ = state; }
   void SetPoseCovariance(const Matrix6d& cov) { state_.cov = cov; }

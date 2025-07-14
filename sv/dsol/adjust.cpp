@@ -1,5 +1,6 @@
 #include "sv/dsol/adjust.h"
 
+#include <iostream>
 #include <mutex>
 
 #include "sv/util/logging.h"
@@ -374,7 +375,7 @@ FrameHessian2 AdjustCost::Build(const FramePointGrid& points0,
 
           point0.UpdateInfo(res * dinfo);
         }  // gc
-      },   // gr
+      },  // gr
       std::plus<>{});
 }
 
@@ -544,7 +545,11 @@ bool AdjustCost::UpdateHess(const Patch& patch0,
 
   const Vector3i ijh{hess01.ii(), hess01.jj(), point0.hid};
   pblock->AddPatchHess(ph, Js.du1_dx0, Js.du1_dx1, Js.du1_dq0, ijh, aff);
-
+  if (cfg.depth_prior && point0.IdepthPrior() > 0.0) {
+    double res = point0.idepth() - point0.IdepthPrior();
+    double weight = 1e2;
+    pblock->AddDepthPriorHess(res, weight, ijh);
+  }
   return true;
 }
 

@@ -11,7 +11,11 @@ using AlignCostCfg = DirectCostCfg;
 
 /// @brief Cost for align
 struct AlignCost final : public DirectCost {
-  using JacGeo = FramePoint::Matrix26d;
+  // using JacGeo = FramePoint::Matrix26d;
+  struct JacGeo {
+    FramePoint::Matrix26d du_dx;
+    FramePoint::Matrix16d dpz_dx;  // depth w.r.t frame pose x
+  };
 
   AlignCost() = default;
   AlignCost(int level,
@@ -39,6 +43,7 @@ struct AlignCost final : public DirectCost {
   bool UpdateHess(const Patch& patch0,
                   const FramePoint& point0,
                   const Patch& patch1,
+                  const DepthPoint& point1,
                   FrameHessian1& hess,
                   int cam_ind = 0) const noexcept;
 };

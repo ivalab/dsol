@@ -102,7 +102,8 @@ struct DirectOdometry {
   TrackStatus Track(double timestamp,
                     const cv::Mat& image_l,
                     const cv::Mat& image_r,
-                    const Sophus::SE3d& dT);
+                    const Sophus::SE3d& dT,
+                    const cv::Mat& depth = {});
   MapStatus Map(bool add_kf, const cv::Mat& depth);
 
   const OdomCfg& cfg() const noexcept { return cfg_; }

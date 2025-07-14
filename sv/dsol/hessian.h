@@ -81,6 +81,7 @@ struct PatchHessian2 final : public PatchHessian {
 struct FrameHessian {
   using Vector10d = MatrixMNd<Dim::kFrame, 1>;
   using Matrix10d = MatrixMNd<Dim::kFrame, Dim::kFrame>;
+  using Matrix16d = MatrixMNd<1, Dim::kPose>;
   using Matrix26d = MatrixMNd<2, Dim::kPose>;
 
   int n{};     // num costs
@@ -119,6 +120,10 @@ struct FrameHessian1 final : public FrameHessian {
   void AddPatchHess(const PatchHessian1& ph,
                     const Matrix26d& G,
                     int affine_offset) noexcept;
+
+  void AddDepthPriorHess(const Matrix16d& G,
+                         const double res,
+                         const double weight) noexcept;
 
   /**
    * @brief Get the Pose Hessian object
@@ -338,6 +343,11 @@ struct FramePointHessian final : public FrameHessianX {
                     const Eigen::Vector2d& Gd,
                     const Eigen::Vector3i& ijh,
                     int affine_offset) noexcept;
+
+  /// @brief add depth prior
+  void AddDepthPriorHess(const double res,
+                         const double weight,
+                         const Eigen::Vector3i& ijh) noexcept;
 
   /// @brief Invert Hmm and make Hpp symmetric
   void Prepare();

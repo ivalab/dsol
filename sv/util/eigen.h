@@ -29,6 +29,7 @@ using ArrayMNd = Eigen::Array<double, M, N>;
 
 using Matrix6d = MatrixMNd<6, 6>;
 using Vector6d = MatrixMNd<6, 1>;
+using Matrix36d = MatrixMNd<3, 6>;
 
 /// @brief Rotate block i to the front of the system, assuming block size n
 /// @details This is a stable rotation, meaning it won't change the order of the

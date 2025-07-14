@@ -36,6 +36,7 @@ DirectCfg ReadDirectCfg(const ros::NodeHandle& pnh) {
   pnh.getParam("max_outliers", cfg.cost.max_outliers);
   pnh.getParam("grad_factor", cfg.cost.grad_factor);
   pnh.getParam("min_depth", cfg.cost.min_depth);
+  pnh.getParam("depth_prior", cfg.cost.depth_prior);
 
   return cfg;
 }
@@ -67,7 +68,7 @@ OdomCfg ReadOdomCfg(const ros::NodeHandle& pnh) {
   return cfg;
 }
 
-Camera MakeCamera(const sensor_msgs::CameraInfo& cinfo_msg) {
+Camera MakeCamera(const sensor_msgs::CameraInfo& cinfo_msg, double baseline) {
   const cv::Size size(cinfo_msg.width, cinfo_msg.height);
   const auto& P = cinfo_msg.P;
   CHECK_GT(P[0], 0);
@@ -77,7 +78,8 @@ Camera MakeCamera(const sensor_msgs::CameraInfo& cinfo_msg) {
   // 8, 9, 10, 11
   Eigen::Array4d fc;
   fc << P[0], P[5], P[2], P[6];
-  return {size, fc, -P[3] / P[0]};
+  baseline = baseline > 0.0 ? baseline : -P[3] / P[0];
+  return {size, fc, baseline};
 }
 
 void Keyframe2Cloud(const Keyframe& keyframe,

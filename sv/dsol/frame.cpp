@@ -42,9 +42,12 @@ Frame::Frame(const ImagePyramid& grays_l,
   }
 }
 
-void Frame::SetGrays(const ImagePyramid& grays_l, const ImagePyramid& grays_r) {
+void Frame::SetGrays(const ImagePyramid& grays_l,
+                     const ImagePyramid& grays_r,
+                     const cv::Mat& depth) {
   grays_l_ = grays_l;
   grays_r_ = grays_r;
+  depth_l_ = depth;
 
   CHECK(IsImagePyramid(grays_l_));
   if (is_stereo()) {
@@ -277,7 +280,7 @@ int Keyframe::InitFromDepth(const cv::Mat& depth, double info) {
       const auto d = depth.at<float>(RoundPix(point.px()));
 
       if (d > 0.1) {  // Reject depth too close
-        point.SetIdepthInfo(1.0 / d, info);
+        point.SetIdepthInfo(1.0 / d, info, true);
         ++n_init;
       }
     }  // gc

@@ -319,4 +319,21 @@ Eigen::Vector3d GradValAtE(const cv::Mat& mat,
   return out;
 }
 
+/// @brief Depth accessor at double pixel location
+double DepthAtD(const cv::Mat& mat, const cv::Point2d& px) noexcept {
+  // TODO (yanwei): can we do better for depth initialization?
+  return mat.at<float>(RoundPix(px));
+}
+
+/// @brief Depth Gradient accessor at double pixel location
+Eigen::Vector2d DepthGradAtD(const cv::Mat& mat,
+                             const cv::Point2d& px) noexcept {
+  const double l = DepthAtD(mat, {px.x - 1, px.y});
+  const double r = DepthAtD(mat, {px.x + 1, px.y});
+
+  const double u = DepthAtD(mat, {px.x, px.y - 1});
+  const double d = DepthAtD(mat, {px.x, px.y + 1});
+  return {(r - l) / 2.0, (d - u) / 2.0};
+}
+
 }  // namespace sv::dsol

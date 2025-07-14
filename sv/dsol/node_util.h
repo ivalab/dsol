@@ -19,7 +19,8 @@ DirectCfg ReadDirectCfg(const ros::NodeHandle& pnh);
 StereoCfg ReadStereoCfg(const ros::NodeHandle& pnh);
 OdomCfg ReadOdomCfg(const ros::NodeHandle& pnh);
 
-Camera MakeCamera(const sensor_msgs::CameraInfo& cinfo_msg);
+Camera MakeCamera(const sensor_msgs::CameraInfo& cinfo_msg,
+                  double baseline = 1.0);
 
 void Keyframe2Cloud(const Keyframe& kefyrame,
                     sensor_msgs::PointCloud2& cloud,

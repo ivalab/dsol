@@ -2,10 +2,7 @@
     <arg name="debug" default="false"/>
     <env if="$(arg debug)" name="ROSCONSOLE_CONFIG_FILE" value="$(find dsol)/launch/debug.conf"/>
 
-    <arg name="gdb"                               default="false"/>         <!-- Launch nodes in gdb for debugging (apt install xterm gdb) -->
-    <arg     if="$(arg gdb)" name="launch_prefix" default="xterm -e gdb -q -ex run --args"/>
-    <arg unless="$(arg gdb)" name="launch_prefix" default=""/>
-
+    <arg name="bagfile"  default="/mnt/DATA/datasets/uHumans2/uHumans2_office_s1_00h.bag"/>
     <arg name="tbb" default="0"/>
     <arg name="log" default="1"/>
     <arg name="vis" default="0"/>
@@ -29,7 +26,7 @@
     <arg name="use_depth" default="false"/>
     <arg name="use_stereo" default="true"/>
 
-    <node pkg="dsol" type="sv_dsol_node_odom" name="dsol_odom" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="dsol" type="sv_dsol_node_odom" name="dsol_odom" output="screen">
         <rosparam command="load" file="$(find dsol)/config/dsol.yaml"/>
         <rosparam command="load" file="$(find dsol)/config/dsol_$(arg data).yaml"/>
 
@@ -43,6 +40,7 @@
         <param name="verbose_logging" type="int" value="$(arg verbose_logging)"/>
         <param name="use_depth" type="bool" value="$(arg use_depth)"/>
         <param name="use_stereo" type="bool" value="$(arg use_stereo)"/>
+        <param name="baseline" type="double" value="0.1"/>
         <param name="data" type="string" value="$(arg data)"/>
         <param name="do_rectification" type="bool" value="$(arg do_rectification)"/>
         <param name="calib_dir" type="string" value="$(arg calib_dir)"/>
@@ -51,11 +49,11 @@
         <param name="transform_publish_period" type="double" value="$(arg transform_publish_period)"/>
         <param name="odom_frame" type="string" value="$(arg odom_frame)"/>
 
-        <remap from="~cinfo0" to="$(arg camera)/infra1/camera_info"/>
-        <remap from="~cinfo1" to="$(arg camera)/infra2/camera_info"/>
-        <remap from="~image0" to="$(arg camera)/infra1/image_rect_raw"/>
-        <remap from="~image1" to="$(arg camera)/infra2/image_rect_raw"/>
-        <remap from="~depth0" to="$(arg camera)/depth/image_rect_raw"/>
+        <remap from="~cinfo0" to="/tesse/left_cam/camera_info"/>
+        <remap from="~cinfo1" to="/tesse/right_cam/camera_info"/>
+        <remap from="~image0" to="/tesse/left_cam/rgb/image_raw"/>
+        <remap from="~image1" to="/tesse/right_cam/rgb/image_raw"/>
+        <!-- <remap from="~depth0" to="$(arg camera)/depth/image_rect_raw"/> -->
         <!-- <remap from="~gyr" to="$(arg camera)/gyro/sample"/> -->
         <remap from="~gyr" to="$(arg camera)/imu"/>
         <remap from="/slam_pose_topic" to="$(arg slam_pose_topic)"/>
@@ -71,5 +69,9 @@
         <include file="$(find closedloop_nav_slam)/launch/robot_state_publisher.launch">
             <arg name="enable_odom_tf" value="true"/>
         </include>
+    </group>
+
+    <group unless="$(eval bagfile == '')">
+        <node pkg="rosbag" type="play" name="rosbag" output="screen" args="--clock $(arg bagfile)"/>
     </group>
 </launch>

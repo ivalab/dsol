@@ -152,7 +152,7 @@ OdomStatus DirectOdometry::Estimate(double timestamp,
   OdomStatus status;
 
   Timer tracking_timer;
-  status.track = Track(timestamp, image_l, image_r, dT);
+  status.track = Track(timestamp, image_l, image_r, dT, depth);
   status.tracking_time = (double)tracking_timer.Elapsed() / 1e9;
   status.disp_frame = CreateFrameForVisualization();
   if (cfg_.vis > 0) DrawFrame(depth);
@@ -177,7 +177,8 @@ OdomStatus DirectOdometry::Estimate(double timestamp,
 TrackStatus DirectOdometry::Track(double timestamp,
                                   const cv::Mat& image_l,
                                   const cv::Mat& image_r,
-                                  const Sophus::SE3d& dT) {
+                                  const Sophus::SE3d& dT,
+                                  const cv::Mat& depth) {
   TrackStatus status;
   // Make sure if we use affine in align, we also use it in adjust
   CHECK_EQ(aligner.cfg().cost.affine, adjuster.cfg().cost.affine);
@@ -198,7 +199,7 @@ TrackStatus DirectOdometry::Track(double timestamp,
 
   // Update frame image and pose (keep the old affine parameters)
   // Note that this uses the same storage as grays_l and grays_r
-  frame.SetGrays(grays_l, grays_r);
+  frame.SetGrays(grays_l, grays_r, depth);
   frame.SetTwc(frame.Twc() * dT);
   // frame.SetPoseCovariance(Matrix6d::Identity() * 1e-6);
   frame.SetPoseCovariance(frame.Cov());

@@ -143,6 +143,7 @@ struct NodeOdom {
   DirectOdometry odom_;
   bool is_gazebo_tt_{false};
 
+  double baseline_{-1.0};             // baseline of stereo camera.
   std::string fixed_frame_{"fixed"};  // Defined by the first camera frame.
   std::string camera_frame_{""};
   // std::string map_frame_{""};
@@ -226,6 +227,7 @@ void NodeOdom::InitOdom() {
 void NodeOdom::InitRosIO() {
   bool use_depth = pnh_.param<bool>("use_depth", false);
   bool use_stereo = pnh_.param<bool>("use_stereo", false);
+  baseline_ = pnh_.param<double>("baseline", -1.0);
   CHECK(use_depth || use_stereo);  // Either one should be enabled.
   if (!use_stereo) {
     // sync_stereo_.emplace(sub_image0_, sub_depth0_, 5);
@@ -409,7 +411,7 @@ void NodeOdom::Cinfo0Cb(const sensor_msgs::CameraInfo& cinfo0_msg) {
 }
 
 void NodeOdom::Cinfo1Cb(const sensor_msgs::CameraInfo& cinfo1_msg) {
-  odom_.camera = MakeCamera(cinfo1_msg);
+  odom_.camera = MakeCamera(cinfo1_msg, baseline_);
   ROS_INFO_STREAM(odom_.camera.Repr());
   sub_cinfo1_.shutdown();
 }
